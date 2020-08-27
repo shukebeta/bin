@@ -1,0 +1,8 @@
+#!/bin/bash
+
+user="shukebeta"
+host="192.168.168.32"
+
+echo "Sync: $1"
+rsync --archive -v --progress -e "ssh -l $user " $1 $host:$2
+

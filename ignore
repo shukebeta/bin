@@ -1,0 +1,2 @@
+git update-index --assume-unchanged ~/Projects/background_shop/Yangtaoabc.{Api,IdServer,Management}/appsettings.{Development,Production}.json
+git update-index --skip-worktree ~/Projects/background_shop/Yangtaoabc.{Api,IdServer,Management}/appsettings.{Development,Production}.json

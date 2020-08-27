@@ -1,0 +1,3 @@
+sudo killall openvpn
+sudo killall openvpn
+sudo openvpn ~/ovpn/shukebeta.ovpn > /dev/null 2>&1 &

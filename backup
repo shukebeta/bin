@@ -1,0 +1,3 @@
+cp ~/Projects/background_shop/Yangtaoabc.Api/appsettings.Development.json ~/configFiles/api-develop.json
+cp ~/Projects/background_shop/Yangtaoabc.IdServer/appsettings.Development.json ~/configFiles/ids-develop.json
+cp ~/Projects/background_shop/Yangtaoabc.Management/appsettings.Development.json ~/configFiles/mgr-develop.json

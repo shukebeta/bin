@@ -1,0 +1,1 @@
+ssh ytp-web-002 -- tail -f /tmp/nohup-deploymaster-api.txt

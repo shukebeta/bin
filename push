@@ -1,0 +1,24 @@
+#!/bin/bash
+
+currentbranch=`git branch --show-current`
+if [ "$currentbranch" == "master" ]; then
+  echo "current branch is master, pushing master means release new version. Cannot do it, sorry."
+  exit 1
+fi
+git pull --ff
+git push
+[ $? -eq 0 ] || echo "push $currentbranch failed!"
+if [ "${currentbranch}" == "local" ]; then
+   git checkout develop
+   git pull --ff
+   git merge local
+   git push
+   [ $? -eq 0 ] || echo push develop failed!
+elif [ "${currentbranch}" == "develop" ]; then
+   git checkout local
+   git pull --ff
+   git merge develop
+   git push
+   [ $? -eq 0 ] || echo push local failed!
+fi
+git checkout $currentbranch

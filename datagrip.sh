@@ -1,0 +1,1 @@
+/home/davidwei/3rd/DataGrip-2020.2/bin/datagrip.sh
