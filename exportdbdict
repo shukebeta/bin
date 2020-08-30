@@ -21,10 +21,10 @@ mysqlshow $1 $2 \
   | sed '1i# Database: '$1' Table: '$2'\n'\
   | tee  $document_path/$1/$2.md
 
-mysql -e "SHOW INDEX FROM ${1}.${2}"\
-  | awk -F"[\t]" '{print $3"|"$5"|"$2"|"$11"|"$14}' \
+mysql --table -e "SHOW INDEX FROM ${1}.${2}"\
+  | sed 's/+/|/g' \
+  | sed -e '1d' -e '$d' \
+  | awk -F"[|]" '{print $4"|"$6"|"$3"|"$12"|"$15}' \
   | sed 's/ *$//g' \
-  | sed '1a\---|---|---|---|---'\
   | sed '1i\\n## Indexes: \n'\
   | tee -a $document_path/$1/$2.md
- # | awk -F"[|]" '{print $2"|"$3"|"$4"|"$5"|"$11"|"$14}' \

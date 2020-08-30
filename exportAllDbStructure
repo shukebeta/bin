@@ -1,2 +1,3 @@
 backupFile=~/bin/git/background_shop/documents/.deployment/utils/db/latestStructure/allDb.sql
-mysqldump -d --databases IDServer YangtaoStandard YangtaoUser YangtaoOrders YangtaoCommodity YangtaoMerchant | sed 's/ AUTO_INCREMENT=[0-9]*//g' > $backupFile
+mysqldump -d --databases IDServer YangtaoStandard YangtaoUser YangtaoOrders YangtaoCommodity YangtaoMerchant \
+| sed -e 's/ AUTO_INCREMENT=[0-9]*//g' -e '$d' > $backupFile
