@@ -1,1 +1,1 @@
-ssh yt-api-1 -- tail -f /tmp/nohup-deploy-api-api.txt
+ssh yt-api-1 -- tail -n 100 -f /tmp/nohup-deploy-api-api.txt
