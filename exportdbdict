@@ -24,7 +24,7 @@ mysqlshow $1 $2 \
 mysql --table -e "SHOW INDEX FROM ${1}.${2}"\
   | sed 's/+/|/g' \
   | sed -e '1d' -e '$d' \
-  | awk -F"[|]" '{print $4"|"$6"|"$3"|"$12"|"$15}' \
+  | awk -F"[|]" '{print $4"|"$6"|"$5"|"$3"|"$12"|"$15}' \
   | sed 's/ *$//g' \
   | sed '1i\\n## Indexes: \n'\
   | tee -a $document_path/$1/$2.md
