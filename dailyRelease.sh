@@ -13,6 +13,10 @@ if [ $? -eq 0 ]; then
     git add .
 	git commit -am"automatically save db structure @ `date '+%Y-%m-%d %H:%M:%S'`"
 	git push
+    git checkout develop
+    git pull --ff
+    git merge master
+    git push
 else
     echo '!!!!!!!!!!!!!!!!Something wrong!'
 fi

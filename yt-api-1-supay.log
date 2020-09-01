@@ -1,0 +1,2 @@
+ssh yt-api-1 -- tail -n 100 -f /data/Logs/supay-callback-`date '+%Y%m%d'`.log
+
