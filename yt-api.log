@@ -1,0 +1,4 @@
+[ "$1" == "" ] && serverNo=1
+[ "$serverNo" == "" ] && serverNo=$1
+echo "You are viewing the log from yt-api-${serverNo}:"
+ssh yt-api-${serverNo} -- tail -n 100 -f /tmp/Yangtaoabc.Api.stdout.txt
