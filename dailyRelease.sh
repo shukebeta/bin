@@ -8,10 +8,6 @@ git pull --ff
 git fetch
 git merge origin/develop
 if [ $? -eq 0 ]; then
-	exportAllDbStructure
-	exportalldbdict.sh
-    git add .
-	git commit -am"automatically save db structure @ `date '+%Y-%m-%d %H:%M:%S'`"
 	git push
     git checkout develop
     git pull --ff
@@ -29,3 +25,4 @@ if [ $? -ne 0 ]; then
     echo '!!!!!!!!!!!!!!!!Something wrong @ front end!'
 fi
 git push
+gen-db-doc.sh
