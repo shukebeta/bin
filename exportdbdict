@@ -8,7 +8,7 @@ if [ $# != 2 ] ; then
     exit 1;
 fi
 
-document_path=~/bin/git/background_shop/documents/database
+document_path=~/Projects/yangtaoabc/documents/database
 
 mkdir -p $document_path/$1
 
