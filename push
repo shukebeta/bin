@@ -7,18 +7,18 @@ if [ "$currentbranch" == "master" ]; then
 fi
 git pull --ff
 git push
-[ $? -eq 0 ] || echo "push $currentbranch failed!"
-if [ "${currentbranch}" == "local" ]; then
-   git checkout develop
-   git pull --ff
-   git merge local
-   git push
-   [ $? -eq 0 ] || echo push develop failed!
-elif [ "${currentbranch}" == "develop" ]; then
-   git checkout local
-   git pull --ff
-   git merge develop
-   git push
-   [ $? -eq 0 ] || echo push local failed!
-fi
-git checkout $currentbranch
+#[ $? -eq 0 ] || echo "push $currentbranch failed!"
+#if [ "${currentbranch}" == "local" ]; then
+#   git checkout develop
+#   git pull --ff
+#   git merge local
+#   git push
+#   [ $? -eq 0 ] || echo push develop failed!
+#elif [ "${currentbranch}" == "develop" ]; then
+#   git checkout local
+#   git pull --ff
+#   git merge develop
+#   git push
+#   [ $? -eq 0 ] || echo push local failed!
+#fi
+#git checkout $currentbranch
