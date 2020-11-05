@@ -2,7 +2,7 @@
 
 set -ex
 
-databases=(IDServer YangtaoStandard YangtaoCommodity YangtaoOrders YangtaoMerchant)
+databases=(IDServer YangtaoStandard YangtaoCommodity YangtaoOrders YangtaoMerchant YangtaoLogging)
 
 for db in "${databases[@]}";
 do

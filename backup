@@ -1,3 +1,16 @@
-cp ~/Projects/background_shop/Yangtaoabc.Api/appsettings.Development.json ~/configFiles/api-develop.json
-cp ~/Projects/background_shop/Yangtaoabc.IdServer/appsettings.Development.json ~/configFiles/ids-develop.json
-cp ~/Projects/background_shop/Yangtaoabc.Management/appsettings.Development.json ~/configFiles/mgr-develop.json
+#!/bin/bash
+set -ex
+
+if [ $# -ne 2 ];
+  echo "Usage: $0 david|localhost comment"
+  exit
+fi
+from=~/Projects/background_shop
+to=~/configFiles
+
+cd ${to}
+git checkout $1
+for project in Yangtaoabc.{Api,IdServer,Management}; do
+  cp ${from}/${project}/appsettings.Development.json ${to}/${project}
+done;
+git commit -am "${3}"

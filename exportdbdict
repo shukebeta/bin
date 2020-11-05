@@ -12,7 +12,7 @@ document_path=~/Projects/yangtaoabc/documents/database
 
 mkdir -p $document_path/$1
 
-mysqlshow $1 $2 \
+mysqlshow --defaults-group-suffix=Local $1 $2 \
   | sed 's/+/|/g' \
   | sed '1,2d' \
   | sed '$d' \
