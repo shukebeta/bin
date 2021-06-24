@@ -1,4 +1,5 @@
 #/bin/bash
+
 sname=$(basename $0)
 if [ "${sname}" == "dailyReleaseMaster.sh" ]; then
   from=develop

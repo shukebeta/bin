@@ -1,0 +1,13 @@
+#!/bin/bash
+
+days=1
+if [ "$1" != "" ]; then
+  days=$1
+fi
+# git log --no-merges --pretty=format:"%ad:%an:%d:%B" --date=short --reverse --all --since=${days}.days.ago --author=David 2>&1
+#git log --no-merges --pretty=tformat:"%ad [%an] | %s%C(auto)%d [%h]" --date=short --reverse --all --since=${days}.days.ago --author=David 2>&1
+echo -n "## On project "
+echo $(git remote -v | head -n1 | awk '{print $2}' | sed -e 's,.*:\(.*/\)\?,,' -e 's/\.git$//')
+echo
+git --no-pager log --no-merges --pretty=tformat:"- %ad | %s%C(auto)%d [%h]" --date=short --reverse --all --since=${days}.days.ago --author="$(git config user.name)" 2>&1
+echo

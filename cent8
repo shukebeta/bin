@@ -1,2 +1,2 @@
-xfreerdp /u:koala /v:192.168.178.179:3389 /p:nsngltlk51djs1nd
+xfreerdp -clipboard -encryption /u:koala /v:192.168.178.179:3389 /p:nsngltlk51djs1nd
 

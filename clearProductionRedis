@@ -1,0 +1,1 @@
+ssh ytp-db-002 '~/redisFlushAll.sh'

@@ -1,1 +1,0 @@
-../../../backup/android/android-studio/bin/studio.sh

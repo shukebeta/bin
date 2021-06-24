@@ -1,0 +1,4 @@
+[ "$1" == "" ] && echo "Usage: $0 username" && exit 1
+if htpasswd ~/.htpasswd $1; then
+    scp ~/.htpasswd yt-ids:
+fi

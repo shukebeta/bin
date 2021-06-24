@@ -1,0 +1,1 @@
+ssh pn "bash -c 'sudo /root/.acme.sh/cpCert2Xps.sh'"
