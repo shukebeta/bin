@@ -1,0 +1,7 @@
+#!/bin/bash
+cd ~/Projects/background_shop && worklog $* && cd - >/dev/null
+cd ~/WebstormProjects/mgr-web && worklog $* && cd - >/dev/null
+cd ~/Projects/background_seller && worklog $* && cd - >/dev/null
+cd ~/WebstormProjects/front_app && worklog $* && cd - >/dev/null
+cd ~/Projects/yangtaoabc && worklog $* && cd - >/dev/null
+cd ~/WebstormProjects/tracking && worklog $* && cd - >/dev/null

@@ -1,0 +1,1 @@
+ssh cent8 'pkill -f CentOS7x64-01 && vboxmanage startvm ab00c2b8-7f6f-4d92-b875-543a3a8ff9db'

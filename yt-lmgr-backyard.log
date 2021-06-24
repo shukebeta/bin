@@ -1,0 +1,4 @@
+# ssh yt-mgr-backyard -- tail -n 100 -f /tmp/yangtaoabc.mgmt.stderr.txt
+ssh centos 'tail -f /tmp/nohup-local-management'
+
+

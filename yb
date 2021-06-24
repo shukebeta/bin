@@ -1,1 +1,2 @@
-sdcv $* |grep '^*\[.\+\]'
+sdcv $* |grep '^*\[.\+\]' || sdcv $* | grep '\[.\+\]' || sdcv $* | grep '\/.\+\/'
+
