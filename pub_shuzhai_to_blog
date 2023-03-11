@@ -1,0 +1,120 @@
+#!/bin/bash
+
+# Check if filename is provided as parameter
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 filename"
+  exit 1
+fi
+
+filename="$1"
+
+if [ ! -f "$filename" ]; then
+  echo "File not found: $filename"
+  exit 1
+fi
+
+if ! [ -r "$filename" ]; then
+  echo "File not readable: $filename"
+  exit 1
+fi
+
+# Check that the file is a text file
+if ! file "$filename" | grep -q "text"; then
+  echo "Not a text file: $filename"
+  exit 1
+fi
+
+# Create the logs directory if it doesn't exist
+LOG_DIR=~/logs
+if [ ! -d "$LOG_DIR" ]; then
+  mkdir "$LOG_DIR"
+fi
+
+# Create an empty log file if it doesn't exist
+LOG_FILE="$LOG_DIR/$(basename "$0").log"
+if [ ! -f "$LOG_FILE" ]; then
+  touch "$LOG_FILE"
+fi
+
+# read the text file and extract the first line as the POST_TITLE
+POST_TITLE=$(head -n 1 $1)
+
+# Check if the new file's title is the same as the last processed title
+if [ -s "$LOG_FILE" ]; then
+  LAST_TITLE=$(tail -n 1 "$LOG_FILE")
+  if [ "$LAST_TITLE" = "$POST_TITLE" ]; then
+    echo "Error: Duplicate title detected: $POST_TITLE"
+    exit 1
+  fi
+fi
+
+# format the file first
+~/bin/shuzhai "$filename"
+
+# re-read the first line as title, as we add "书摘：" as a prefix to the title
+POST_TITLE=$(head -n 1 $1)
+
+# Log the new title
+echo "$POST_TITLE" >> "$LOG_FILE"
+
+# set the URL of the blog site
+BLOG_URL='https://blog.shukebeta.com/admin/add_post/'
+
+# read the rest as the POST_BODY
+POST_BODY=$(tail -n +2 $filename)
+
+# build the data for the curl request
+DATA=$(cat <<EOF
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="title"
+
+${POST_TITLE}
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="body"
+
+${POST_BODY}
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="status"
+
+public
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="slug"
+
+
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="created_at"
+
+$(date +"%Y-%m-%d %H:%M:%S")
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="option[comment_status]"
+
+open
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="tags"
+
+中文, 书摘
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="option[category_id]"
+
+3
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="feather"
+
+text
+------WebKitFormBoundaryEznVwciBsbYrRkwB
+Content-Disposition: form-data; name="hash"
+
+28ccc1f365e2781c9b0877badb3349cc5ce9945a
+------WebKitFormBoundaryEznVwciBsbYrRkwB--
+EOF
+)
+
+# send the curl request
+curl -X POST "${BLOG_URL}" \
+  -H 'origin: https://blog.shukebeta.com' \
+  -H 'referer: https://blog.shukebeta.com/admin/' \
+  -H 'cookie: ChyrpSession=pav0g2iq7d0phl95qna76c47sm' \
+     -H "Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryEznVwciBsbYrRkwB" \
+     -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36" \
+     --data "${DATA}"
+
