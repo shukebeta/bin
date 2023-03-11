@@ -1,0 +1,2 @@
+xfreerdp +clipboard -encryption /network:auto /multimon /d:LAKROS /u:David.Wei /v:DEV91.lakros.com:3389 /p:chrd5-hdhxtchrd3 # /sound:sys:alsa /microphone:sys:alsa
+

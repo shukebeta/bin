@@ -1,0 +1,5 @@
+ssh ytp-db-002 < ~/fake-orders.sql -- mysql --table | sed 's/+/|/g' \
+  | sed -e '1d' -e '$d' \
+  | sed 's/ *$//g' \
+  | tee ~/maybe-fake-order-list.md
+scp ~/maybe-fake-order-list.md yt-ids:publish/documents/

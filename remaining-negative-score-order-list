@@ -1,0 +1,6 @@
+filename=negative-score-remaining-orders
+ssh ytp-db-002 < ~/${filename}.sql -- mysql --table | sed 's/+/|/g' \
+  | sed -e '1d' -e '$d' \
+  | sed 's/ *$//g' \
+  | tee ~/${filename}-list.md
+scp ~/${filename}-list.md yt-ids:publish/documents/

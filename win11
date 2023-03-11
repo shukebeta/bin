@@ -1,0 +1,2 @@
+xfreerdp -clipboard -encryption /multimon /u:vagrant /v:192.168.168.193:3389 /p:vagrant
+

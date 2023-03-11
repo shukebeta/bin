@@ -1,0 +1,6 @@
+﻿platform: Linux 5.11.0-7620-generic #21~1626191760~20.04~55de9c3-Ubuntu SMP Wed Jul 21 20:31:55 UTC  x86_64
+version: 2.7.2.1375
+[20220206 10:29:40.953] ZIP: Can't locate [version] in zip, error -100.
+[20220206 10:29:40.965] saved history: 0 events
+[20220206 10:29:40.965] Torrent session shutdown: done waiting
+[20220206 10:29:40.965] Shutdown. Saving config sync.dat

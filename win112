@@ -1,0 +1,2 @@
+xfreerdp -clipboard -encryption /multimon /u:vagrant /v:xps.shukebeta.eu.org:2200 /p:vagrant
+
