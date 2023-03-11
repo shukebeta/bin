@@ -1,0 +1,10 @@
+#!/bin/bash
+
+logFile=/tmp/deleteAccountByMemberId.log
+memberId=$1
+sqlFile=~/bin/deleteAccountByMemberId.SQL
+sqlStatements=$(cat $sqlFile | sed 's/place-holder/'${memberId}'/g')
+TZ="Pacific/Auckland" date '+%Y-%m-%d %H:%M:%S' >> $logFile
+echo $sqlStatements | tee -a $logFile | mysql
+echo >> $logFile
+echo The account for MemberId: $memberId has been removed Done.

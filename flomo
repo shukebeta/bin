@@ -1,0 +1,24 @@
+#!/bin/bash
+
+[ "$1" != "" ] || exit 1
+content=`printf '%q' "$*"`
+curl 'https://flomoapp.com/api/memo/' \
+  -v \
+  -X 'PUT' \
+  -H 'authority: flomoapp.com' \
+  -H 'sec-ch-ua: " Not;A Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'x-xsrf-token: eyJpdiI6Ikd5bkNrVlRxc2taOEhiVXNuQnFMcVE9PSIsInZhbHVlIjoiQ3oyRDBOMldYMEt6bml4TGFaVE10eFhNSzdiSzhwTGVROGNJR2dIallBWUZydmRpbktOOHk5UHc5WldaTndZOCIsIm1hYyI6ImNmZDJmMjRmMTI5YWU1OTlhM2FiMmFiMGJmYzExYWRlNzU5ODIzMzJkOTNjNmFkZjI5MTJiOWZmOWZiN2FmYjIifQ==' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36' \
+  -H 'content-type: application/json;charset=UTF-8' \
+  -H 'origin: https://flomoapp.com' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'referer: https://flomoapp.com/mine?' \
+  -H 'accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,zh-TW;q=0.6,ru;q=0.5' \
+  -H 'cookie: amplitude_id_fef1e872c952688acd962d30aa545b9eflomoapp.com=eyJkZXZpY2VJZCI6IjhkODIzN2Q0LTU4ZDctNGI1NS05NGM5LTdiM2M0MjBlNjQzOVIiLCJ1c2VySWQiOm51bGwsIm9wdE91dCI6ZmFsc2UsInNlc3Npb25JZCI6MTYyNjgxNTg1OTY0NywibGFzdEV2ZW50VGltZSI6MTYyNjgxNTg4NDgxOCwiZXZlbnRJZCI6MywiaWRlbnRpZnlJZCI6MSwic2VxdWVuY2VOdW1iZXIiOjR9; XSRF-TOKEN=eyJpdiI6Ikd5bkNrVlRxc2taOEhiVXNuQnFMcVE9PSIsInZhbHVlIjoiQ3oyRDBOMldYMEt6bml4TGFaVE10eFhNSzdiSzhwTGVROGNJR2dIallBWUZydmRpbktOOHk5UHc5WldaTndZOCIsIm1hYyI6ImNmZDJmMjRmMTI5YWU1OTlhM2FiMmFiMGJmYzExYWRlNzU5ODIzMzJkOTNjNmFkZjI5MTJiOWZmOWZiN2FmYjIifQ%3D%3D; flomo_session=eyJpdiI6IjhtNW5sRGdKTVNqY21yMDc3am1DaFE9PSIsInZhbHVlIjoiOUg3YjloUitJRUFhanUxTE5na1F0TWMxRUhlUzJHUk5PeHROTjFJNHZBbkRFZlZ0ZTBNNld0MzZoNGZyeXBoNSIsIm1hYyI6IjQ3YzExZDQ2NWE2NGQxNjJlM2NkNTRiYzdmMTk0YTJmMTgzMWVlNzFkNzI4YWFmYjkyMzA3ZmI3ZjlhMDlmNGIifQ%3D%3D' \
+  --data-raw '{"title":null,"content":"<p>'"${content}"'</p>","file_ids":[],"parent_memo_slug":null,"source":"web","tz":"12:0"}' \
+  --compressed

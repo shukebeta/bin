@@ -1,0 +1,5 @@
+cd ~/Projects/background_shop
+(cd Yangtaoabc.Api && git co b97b1b3652a046e0909f80c50c918e84f535c126 -- Properties && git reset Properties)
+(cd Yangtaoabc.Management && git co b97b1b3652a046e0909f80c50c918e84f535c126 -- Properties && git reset Properties)
+(cd Yangtaoabc.Merchant.Api && git co b97b1b3652a046e0909f80c50c918e84f535c126 -- Properties && git reset Properties)
+(cd Yangtaoabc.IdServer && git co b97b1b3652a046e0909f80c50c918e84f535c126 -- Properties && git reset Properties)

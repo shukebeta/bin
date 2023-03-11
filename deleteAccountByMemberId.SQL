@@ -1,0 +1,11 @@
+SET @memberId='place-holder';
+DELETE FROM YangtaoOrders.Orders WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+DELETE FROM YangtaoOrders.Orders WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+DELETE FROM YangtaoOrders.MemberScore WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+DELETE FROM YangtaoOrders.MemberScoreItem WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+DELETE FROM IDServer.MemberBaseInfo WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+DELETE FROM IDServer.ThirdLogin WHERE @memberId IS NOT NULL AND MemberId = @memberId;
+SELECT @storeId = Id FROM YangtaoMerchant.Store WHERE @memberId IS NOT NULL AND StoreKeeperId = @memberId;
+DELETE FROM YangtaoMerchant.Store WHERE @memberId IS NOT NULL AND StoreKeeperId = @memberId;
+DELETE FROM YangtaoMerchant.StoreAccount WHERE @storeId IS NOT NULL AND StoreId = @storeId;
+DELETE FROM IDServer.AspNetUsers WHERE @memberId IS NOT NULL AND Id = @memberId;

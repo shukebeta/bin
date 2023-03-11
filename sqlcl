@@ -1,0 +1,1 @@
+~/3rd/sqlcl/bin/sql -L system/oracle@//152.67.98.108:41521/xe

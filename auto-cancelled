@@ -1,0 +1,5 @@
+ssh ytp-db-002 < ~/auto-cancelled.sql -- mysql --table | sed 's/+/|/g' \
+  | sed -e '1d' -e '$d' \
+  | sed 's/ *$//g' \
+  | tee ~/auto-cancelled-list.md
+scp ~/auto-cancelled-list.md yt-ids:publish/documents/
