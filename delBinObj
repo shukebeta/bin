@@ -1,13 +1,13 @@
 #!/usr/bin/bash
 
-# This script is for C# programmers who enjoy bash as their favourite command line env
-
 set -e
-find . -iname "bin" -o -iname "obj" -print0 | xargs -0 echo
+find . -iname "bin" -print0 | xargs -0 echo
+find . -iname "obj" -print0 | xargs -0 echo
 read -p "The above folders are going to be deleted, are you sure? " -n 1 -r
 echo    # (optional) move to a new line
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    find . -iname "bin" -o -iname "obj" -print0 | xargs -0 rm -rfv
+    find . -iname "bin" -print0 | xargs -0 rm -rfv
+    find . -iname "obj" -print0 | xargs -0 rm -rfv
     echo done
 else
     echo no
