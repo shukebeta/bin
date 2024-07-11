@@ -1,0 +1,1 @@
+tail -f ~/.local/share/com.example.HappyNotes/dio_client.log
