@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# 获取 git 变更
+changes=$(git diff --cached)
+
+# 如果没有变更，退出
+if [ -z "$changes" ]; then
+  echo "No changes to commit."
+  exit 0
+fi
+
+# 创建临时文件存储 git 变更内容
+temp_file=$(mktemp)
+echo "$changes" > $temp_file
+
+# 设置 prompt 模板
+prompt_template=$(cat <<-END
+You are a programmer, trained to write commit messages.
+You follow the Conventional Commits specification.
+feat: for new features
+chore: for maintenance work
+fix: for bug fixes
+Below, you will receive a changeset, which is a list of changes to the codebase.
+Based on this information generate a commit message.
+Return the commit message as a json response.
+THE RESULT SHOULD ONLY BE A VALID JSON!
+Example response:
+{
+  "commit": "feat: added new disabled boolean variable to button"
+}
+Keep the generated commit message strictly under 50 characters, if its more summarise it.
+THE COMMIT MESSAGE SHOULD NOT BE MORE THAN 50 CHARACTERS!!!!!
+and do not include any other information/text rather than the commit message itself.
+END
+)
+
+prompt_template+="$(cat $temp_file)"
+rm $temp_file
+
+commit_message=$(http POST http://localhost:11434/api/generate options:='{"seed": 42, "temperature": 0.9}' model=mistral:latest prompt="$prompt_template" stream:=false | jq -r .response)
+commit_message=$(echo "$commit_message" | jq -r '.commit')
+
+# 如果提交消息为空，使用默认消息
+if [ -z "$commit_message" ]; then
+  commit_message="Update files"
+fi
+
+# 打印并确认提交消息
+#echo "Commit message: $commit_message"
+#read -p "Do you want to commit with this message? (y/n) " confirm
+
+#if [ "$confirm" != "y" ]; then
+#  echo "Commit aborted."
+#  exit 0
+#fi
+
+# 提交变更
+git commit -m "$commit_message"
+
+echo "Changes committed with message: $commit_message"
+
