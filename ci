@@ -9,48 +9,42 @@ if [ -z "$changes" ]; then
   exit 0
 fi
 
-# 创建临时文件存储 git 变更内容
-#temp_file=$(mktemp)
-#echo "$changes" > $temp_file
-
 # 设置 prompt 模板
 prompt_template=$(cat <<-END
-You are a programmer, trained to write commit messages.
-You follow the Conventional Commits specification.
+You are trained to write git commit messages,
+you follow the conventional commits specification:
+
 feat: for new features
 chore: for maintenance work
 fix: for bug fixes
-Below, you will receive a changeset, which is a list of changes to the codebase.
-Based on this information generate a commit message.
-Return the commit message as a json response.
-THE RESULT SHOULD ONLY BE A VALID JSON!
-Example response:
-{
-  "commit": "feat: added new disabled boolean variable to button"
-}
-Keep the generated commit message strictly under 50 characters, if its more summarise it.
-THE COMMIT MESSAGE SHOULD NOT BE MORE THAN 50 CHARACTERS!!!!!
+
+Below, you will receive the changes from `git diff` command.
+please summarize the changes and generate a short but meaningful message.
+THE RESULT SHOULD ONLY BE A SENTENCE NO MORE THEN 50 CHARACTERS.
+here is a Example response, but DO NOT return it as your result.
+
+feat: added new disabled boolean variable to button
+
+Just summarise and keep it short and meaningful, no more than 50 chars!!!!
 and do not include any other information/text rather than the commit message itself.
 END
 )
 
 prompt_template+="$changes"
-rm $temp_file
 
 # 使用 jq 构建 JSON 请求体
-request_body=$(jq -n --arg model "gpt-3.5-turbo" --arg prompt "$prompt_template" \
-  '{model: $model, messages: [{role: "user", content: $prompt}], max_tokens: 50, temperature: 0.2}')
+request_body=$(jq -n --arg model "gpt-3.5-turbo-0125" --arg prompt "$prompt_template" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, temperature: 0.1}')
 
 # 使用 curl 请求 OpenAI API 生成提交消息
-response=$(curl --request POST \
+response=$(curl -s --request POST \
   --url https://api.openai.com/v1/chat/completions \
   --header "Authorization: Bearer $OPENAI_API_KEY" \
   --header "Content-Type: application/json" \
   --data "$request_body")
-echo $response
 
 # 从响应中提取提交消息
-commit_message=$(echo "$response" | jq -r '.choices[0].message.content' | jq -r '.commit')
+commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
 
 # 如果提交消息为空，使用默认消息
 #if [ -z "$commit_message" ]; then
