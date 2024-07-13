@@ -10,8 +10,8 @@ if [ -z "$changes" ]; then
 fi
 
 # 创建临时文件存储 git 变更内容
-temp_file=$(mktemp)
-echo "$changes" > $temp_file
+#temp_file=$(mktemp)
+#echo "$changes" > $temp_file
 
 # 设置 prompt 模板
 prompt_template=$(cat <<-END
@@ -34,16 +34,28 @@ and do not include any other information/text rather than the commit message its
 END
 )
 
-prompt_template+="$(cat $temp_file)"
+prompt_template+="$changes"
 rm $temp_file
 
-commit_message=$(http POST http://localhost:11434/api/generate options:='{"seed": 42, "temperature": 0.9}' model=mistral:latest prompt="$prompt_template" stream:=false | jq -r .response)
-commit_message=$(echo "$commit_message" | jq -r '.commit')
+# 使用 jq 构建 JSON 请求体
+request_body=$(jq -n --arg model "gpt-3.5-turbo" --arg prompt "$prompt_template" \
+  '{model: $model, messages: [{role: "user", content: $prompt}], max_tokens: 50, temperature: 0.2}')
+
+# 使用 curl 请求 OpenAI API 生成提交消息
+response=$(curl --request POST \
+  --url https://api.openai.com/v1/chat/completions \
+  --header "Authorization: Bearer $OPENAI_API_KEY" \
+  --header "Content-Type: application/json" \
+  --data "$request_body")
+echo $response
+
+# 从响应中提取提交消息
+commit_message=$(echo "$response" | jq -r '.choices[0].message.content' | jq -r '.commit')
 
 # 如果提交消息为空，使用默认消息
-if [ -z "$commit_message" ]; then
-  commit_message="Update files"
-fi
+#if [ -z "$commit_message" ]; then
+#  commit_message="Update files"
+#fi
 
 # 打印并确认提交消息
 #echo "Commit message: $commit_message"
@@ -57,5 +69,5 @@ fi
 # 提交变更
 git commit -m "$commit_message"
 
-echo "Changes committed with message: $commit_message"
+#echo "Changes committed with message: $commit_message"
 
