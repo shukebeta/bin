@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# 获取 git 变更
+# Get git changes
 changes=$(git diff --cached)
 
-# 如果没有变更，退出
+# Exit if no changes
 if [ -z "$changes" ]; then
   echo "No changes to commit."
   exit 0
 fi
 
-# 设置 prompt 模板
+# Set prompt template
 prompt_template=$(cat <<-END
 You are trained to write git commit messages,
 you follow the conventional commits specification:
@@ -19,49 +19,40 @@ chore: for maintenance work
 fix: for bug fixes
 
 Below, you will receive the changes from `git diff` command.
-please summarize the changes and generate a short but meaningful message.
-THE RESULT SHOULD ONLY BE A SENTENCE NO MORE THEN 50 CHARACTERS.
+please summarize the changes and generate a short commit message.
+you should try to include every meaningful changes while keep the result short.
+THE RESULT SHOULD ONLY BE A SENTENCE NO MORE THEN 80 CHARACTERS.
 here is a Example response, but DO NOT return it as your result.
 
 feat: added new disabled boolean variable to button
 
-Just summarise and keep it short and meaningful, no more than 50 chars!!!!
+Just summarise and keep it short and meaningful, no more than 80 chars!!!!
 and do not include any other information/text rather than the commit message itself.
 END
 )
 
 prompt_template+="$changes"
 
-# 使用 jq 构建 JSON 请求体
-request_body=$(jq -n --arg model "gpt-3.5-turbo-0125" --arg prompt "$prompt_template" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, temperature: 0.1}')
+# Build JSON request body using jq
+request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, seed: 45, temperature: 0}')
 
-# 使用 curl 请求 OpenAI API 生成提交消息
+# Use curl to request the OpenAI API to generate a commit message
 response=$(curl -s --request POST \
   --url https://api.openai.com/v1/chat/completions \
   --header "Authorization: Bearer $OPENAI_API_KEY" \
   --header "Content-Type: application/json" \
   --data "$request_body")
 
-# 从响应中提取提交消息
+# Extract commit message from the response
 commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
 
-# 如果提交消息为空，使用默认消息
-#if [ -z "$commit_message" ]; then
-#  commit_message="Update files"
-#fi
+# Exit if the commit message is empty
+if [ -z "$commit_message" ]; then
+  echo 'failed to generate a commit message'
+  exit 1
+fi
 
-# 打印并确认提交消息
-#echo "Commit message: $commit_message"
-#read -p "Do you want to commit with this message? (y/n) " confirm
-
-#if [ "$confirm" != "y" ]; then
-#  echo "Commit aborted."
-#  exit 0
-#fi
-
-# 提交变更
+# Commit changes
 git commit -m "$commit_message"
-
-#echo "Changes committed with message: $commit_message"
 
