@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Check if the required arguments are provided
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    echo "Usage: $0 <directory> <target_string> [<replacement_string>]"
+    exit 1
+fi
+
+# Assign arguments to variables
+directory="$1"
+target_string="$2"
+replacement_string="$3"
+
+# If replacement string is not provided, set it to an empty string
+if [ -z "$replacement_string" ]; then
+    replacement_string=""
+fi
+
+# Escape double quotes in the target string and replacement string
+escaped_target_string=$(printf '%s\n' "$target_string" | sed 's/"/\\&/g')
+escaped_replacement_string=$(printf '%s\n' "$replacement_string" | sed 's/"/\\&/g')
+
+# Use rg to find files containing the target string and replace backslashes with forward slashes in the file paths
+rg --files-with-matches "$escaped_target_string" "$directory" | sed 's/\\/\//g' | xargs sed -i "s/$escaped_target_string/$escaped_replacement_string/g"
+
+echo "Operation completed successfully."

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get git changes
-changes=$(git diff --cached)
+changes=$(git diff -w -b HEAD)
 
 # Exit if no changes
 if [ -z "$changes" ]; then
@@ -11,23 +11,24 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are trained to write git commit messages,
-you follow the conventional commits specification:
+You are good at writing git commit messages;
+You follow the conventional commits specification:
 
 feat: for new features
 chore: for maintenance work
 fix: for bug fixes
 
-Below, you will receive the changes from `git diff` command.
-please summarize the changes and generate a short commit message.
-you should try to include every meaningful changes while keep the result short.
-THE RESULT SHOULD ONLY BE A SENTENCE NO MORE THEN 80 CHARACTERS.
+You need to write a commit message for the changes from `git diff` command.
+please summarize the changes and write a short commit message.
+you should try to summerize all meaningful changes while keep the result short.
+THE RESULT SHOULD ONLY BE NO MORE THEN 80 CHARACTERS.
 here is a Example response, but DO NOT return it as your result.
 
 feat: added new disabled boolean variable to button
 
-Just summarise and keep it short and meaningful, no more than 80 chars!!!!
-and do not include any other information/text rather than the commit message itself.
+do not include any other information/text rather than the commit message itself.
+and here's the changes:
+
 END
 )
 
@@ -54,5 +55,5 @@ if [ -z "$commit_message" ]; then
 fi
 
 # Commit changes
-git commit -m "$commit_message"
+git commit -am "$commit_message"
 
