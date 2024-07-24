@@ -18,16 +18,12 @@ feat: for new features
 chore: for maintenance work
 fix: for bug fixes
 
-You need to write a commit message for the changes from `git diff` command.
-please summarize the changes and write a short commit message.
-you should try to summerize all meaningful changes while keep the result short.
-THE RESULT SHOULD ONLY BE NO MORE THEN 80 CHARACTERS.
-here is a Example response, but DO NOT return it as your result.
+Please help write a commit message for the following changes from a `git diff` command.
+Please try to summerize all meaningful changes while keep the result short.
+THE RESULT SHOULD ONLY BE NO MORE THEN 100 CHARACTERS.
 
-feat: added new disabled boolean variable to button
-
-do not include any other information/text rather than the commit message itself.
-and here's the changes:
+please do not respond any other information/text rather than the commit message itself.
+and here're the changes:
 
 END
 )
@@ -35,13 +31,21 @@ END
 prompt_template+="$changes"
 
 # Build JSON request body using jq
-request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, seed: 45, temperature: 0}')
+#request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
+#  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, seed: 45, temperature: 0}')
+#response=$(curl -s --request POST \
+#  --url https://api.openai.com/v1/chat/completions \
+#  --header "Authorization: Bearer $OPENAI_API_KEY" \
+#  --header "Content-Type: application/json" \
+#  --data "$request_body")
+
+request_body=$(jq -n --arg model "mixtral-8x7b-32768" --arg prompt "$prompt_template" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 32768, stream: false, temperature: 0, top_p: 1, stop: null}')
 
 # Use curl to request the OpenAI API to generate a commit message
 response=$(curl -s --request POST \
-  --url https://api.openai.com/v1/chat/completions \
-  --header "Authorization: Bearer $OPENAI_API_KEY" \
+  --url https://api.groq.com/openai/v1/chat/completions \
+  --header "Authorization: Bearer $GROQ_API_KEY" \
   --header "Content-Type: application/json" \
   --data "$request_body")
 
