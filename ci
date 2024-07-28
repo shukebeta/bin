@@ -19,11 +19,12 @@ chore: for maintenance work
 fix: for bug fixes
 
 Please help write a commit message for the following changes from a `git diff` command.
-Please try to summerize all meaningful changes while keep the result short.
+
+Please try to summarize all meaningful changes while keep the result short.
 THE RESULT SHOULD ONLY BE NO MORE THEN 100 CHARACTERS.
 
-please do not respond any other information/text rather than the commit message itself.
-and here're the changes:
+Do not respond any other text rather than the commit message itself!!!
+and here are the changes:
 
 END
 )
