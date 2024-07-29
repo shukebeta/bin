@@ -11,20 +11,13 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are good at writing git commit messages;
-You follow the conventional commits specification:
+You are skilled at writing git commit messages and follow the conventional commits specification:
 
-feat: for new features
-chore: for maintenance work
-fix: for bug fixes
+    feat: for new features
+    chore: for maintenance work
+    fix: for bug fixes
 
-Please help write a commit message for the following changes from a `git diff` command.
-
-Please try to summarize all meaningful changes while keep the result short.
-THE RESULT SHOULD ONLY BE NO MORE THEN 100 CHARACTERS.
-
-Do not respond any other text rather than the commit message itself!!!
-and here are the changes:
+You will be given the changes from a "git diff -w -b HEAD" command. Summarize all meaningful changes into one commit message, no more than 100 characters. Respond only with the commit message. Do not mention unchanged aspects. Here are the changes:
 
 END
 )
