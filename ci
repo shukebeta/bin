@@ -1,7 +1,16 @@
 #!/bin/bash
 
+# Check if the optional parameter for staged changes is provided
+if [ "$1" == "--cached" ]; then
+  git_diff="git diff -w -b --cached"
+  commit_command="git commit -m"
+else
+  git_diff="git diff -w -b HEAD"
+  commit_command="git commit -am"
+fi
+
 # Get git changes
-changes=$(git diff -w -b HEAD)
+changes=$($git_diff)
 
 # Exit if no changes
 if [ -z "$changes" ]; then
@@ -11,10 +20,10 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing git commit messages and follow the conventional commits specification:
+You are skilled at writing git commit messages and follow the conventional commit message prefix:
 
     feature: for new features
-    fix: for bug fixes
+    bugfix: for bug fixes
     other: for other changes
 
 You will be given the changes from a 'git diff -w -b HEAD' command.
@@ -78,5 +87,5 @@ fi
 echo "Commit message generated using: $api_used"
 
 # Commit changes
-git commit -am "$commit_message"
+$commit_command "$commit_message"
 
