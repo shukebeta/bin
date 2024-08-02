@@ -13,45 +13,69 @@ fi
 prompt_template=$(cat <<-END
 You are skilled at writing git commit messages and follow the conventional commits specification:
 
-    feat: for new features
-    chore: for maintenance work
+    feature: for new features
     fix: for bug fixes
+    other: for other changes
 
-You will be given the changes from a "git diff -w -b HEAD" command. Summarize all meaningful changes into one commit message, no more than 100 characters. Respond only with the commit message. Do not mention unchanged aspects. Here are the changes:
+You will be given the changes from a 'git diff -w -b HEAD' command.
+Please summarize all meaningful changes into one commit message, no more than 100 characters.
+Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters.
+Here are the changes:
 
 END
 )
 
 prompt_template+="$changes"
 
-# Build JSON request body using jq
-#request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
-#  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, seed: 45, temperature: 0}')
-#response=$(curl -s --request POST \
-#  --url https://api.openai.com/v1/chat/completions \
-#  --header "Authorization: Bearer $OPENAI_API_KEY" \
-#  --header "Content-Type: application/json" \
-#  --data "$request_body")
-
-request_body=$(jq -n --arg model "mixtral-8x7b-32768" --arg prompt "$prompt_template" \
+# Build JSON request body using jq for Groq API
+groq_request_body=$(jq -n --arg model "mixtral-8x7b-32768" --arg prompt "$prompt_template" \
   '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 32768, stream: false, temperature: 0, top_p: 1, stop: null}')
 
-# Use curl to request the OpenAI API to generate a commit message
-response=$(curl -s --request POST \
-  --url https://api.groq.com/openai/v1/chat/completions \
-  --header "Authorization: Bearer $GROQ_API_KEY" \
-  --header "Content-Type: application/json" \
-  --data "$request_body")
+# Build JSON request body using jq for OpenAI API
+openai_request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, temperature: 0}')
 
-# Extract commit message from the response
-commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
+# Function to get commit message from Groq API
+get_commit_message_groq() {
+  response=$(curl -s --request POST \
+    --url https://api.groq.com/openai/v1/chat/completions \
+    --header "Authorization: Bearer $GROQ_API_KEY" \
+    --header "Content-Type: application/json" \
+    --data "$groq_request_body")
+
+  echo "$response" | jq -r '.choices[0].message.content'
+}
+
+# Function to get commit message from OpenAI API
+get_commit_message_openai() {
+  response=$(curl -s --request POST \
+    --url https://api.openai.com/v1/chat/completions \
+    --header "Authorization: Bearer $OPENAI_API_KEY" \
+    --header "Content-Type: application/json" \
+    --data "$openai_request_body")
+
+  echo "$response" | jq -r '.choices[0].message.content'
+}
+
+# Try Groq API first
+commit_message=$(get_commit_message_groq)
+api_used="Groq API"
+
+# If Groq API fails due to rate limit, try OpenAI API
+if [[ -z "$commit_message" || "$commit_message" == "null" || "$commit_message" =~ "Rate limit reached" ]]; then
+  commit_message=$(get_commit_message_openai)
+  api_used="OpenAI API"
+fi
 
 # Exit if the commit message is empty
 if [ -z "$commit_message" ] || [ "$commit_message" == "null" ]; then
-  echo 'failed to generate a commit message:'
+  echo 'Failed to generate a commit message:'
   echo $response
   exit 1
 fi
+
+# Print the API used
+echo "Commit message generated using: $api_used"
 
 # Commit changes
 git commit -am "$commit_message"
