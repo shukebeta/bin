@@ -28,7 +28,7 @@ You are skilled at writing git commit messages and follow the conventional commi
 
 You will be given the changes from a 'git diff -w -b HEAD' command.
 Please summarize all meaningful changes into one commit message, no more than 100 characters.
-Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters.
+Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters. Remember to use proper commit message prefix.
 Here are the changes:
 
 END
