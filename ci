@@ -20,29 +20,34 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing git commit messages and follow the conventional commit message prefix:
+You are skilled at writing git commit messages and follow the conventional prefix:
 
     feature: for new features
-    bugfix: for bug fixes
+    fix: for bug fixes
     other: for other changes
 
 You will be given the changes from a 'git diff -w -b HEAD' command.
 Please summarize all meaningful changes into one commit message, no more than 100 characters.
-Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters. Remember to use proper commit message prefix.
+Respond only with the commit message. Remember to use proper prefix in the commit message.
+Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters.
 Here are the changes:
 
 END
 )
 
-prompt_template+="$changes"
+# Encode prompt and changes
+encoded_prompt_template=$(echo "$prompt_template" | jq -sR .)
+encoded_changes=$(echo "$changes" | jq -sR .)
 
 # Build JSON request body using jq for Groq API
-groq_request_body=$(jq -n --arg model "mixtral-8x7b-32768" --arg prompt "$prompt_template" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 32768, stream: false, temperature: 0, top_p: 1, stop: null}')
+groq_request_body=$(jq -n --arg model "mixtral-8x7b-32768" --argjson prompt "$encoded_prompt_template" \
+  --argjson changes "$encoded_changes" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: 32768, stream: false, temperature: 0, top_p: 1, stop: null}')
 
 # Build JSON request body using jq for OpenAI API
-openai_request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 50, temperature: 0}')
+openai_request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --argjson prompt "$encoded_prompt_template" \
+  --argjson changes "$encoded_changes" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: 50, temperature: 0}')
 
 # Function to get commit message from Groq API
 get_commit_message_groq() {
