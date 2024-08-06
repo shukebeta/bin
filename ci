@@ -22,13 +22,16 @@ fi
 prompt_template=$(cat <<-END
 You are skilled at writing git commit messages and follow the conventional commit message prefix:
 
-    feature: for new features
-    bugfix: for bug fixes
-    other: for other changes
+    refactor: for refactoring
+    fix: for bug fixes
+    minor: for minor changes
+    ...
 
 You will be given the changes from a 'git diff -w -b HEAD' command.
 Please summarize all meaningful changes into one commit message, no more than 100 characters.
-Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters. Remember to use proper commit message prefix.
+Respond only with the commit message. Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters. 
+Remember to use proper commit message prefix. DO REVISE THE MESSAGE THREE TIMES before sending it out. And again: no more than 100 characters!!!
+
 Here are the changes:
 
 END
