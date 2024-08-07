@@ -24,7 +24,7 @@ You are skilled at writing git commit messages and follow this convention:
 
     refactor: for refactoring
     minor: for minor changes
-    empty prefix for others
+    empty prefix if you can't find a proper one
 
 You will be given the changes in the diff format.
 Please summarize all meaningful changes into one commit message, no more than 100 characters.
