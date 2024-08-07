@@ -10,7 +10,7 @@ else
 fi
 
 # Get git changes
-changes=$($git_diff)
+changes=$($git_diff 2>/dev/null)
 
 # Exit if no changes
 if [ -z "$changes" ]; then
@@ -20,18 +20,16 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing git commit messages and follow this convention:
+You are skilled at writing git commit messages following these conventions:
 
     refactor: for refactoring
     minor: for minor changes
-    empty prefix if you can't find a proper one
+    no prefix if none fit
 
-You will be given the changes in the diff format.
-Please summarize all meaningful changes into one commit message, no more than 100 characters.
-Respond only with the commit message. 
-Remember to use a proper prefix if you can find one in the comit message. 
-Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters. 
-DO REVISE THE MESSAGE THREE TIMES before sending it out. And again: Be brief and no longer than 100 characters!!!
+Summarize the changes from 'git diff -w -b HEAD' into one commit message, no more than 100 characters.
+Only mention meaningful changes.
+Do not use double quotes and don't escape '_' characters in the commit message.
+Revise the message three times and remove the back slash characters before sending. Respond only with the commit message.
 
 Here are the changes:
 
@@ -101,5 +99,5 @@ fi
 echo "Commit message generated using: $api_used"
 
 # Commit changes
-$commit_command "$commit_message"
+$commit_command "$commit_message" 2>/dev/null
 
