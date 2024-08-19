@@ -10,7 +10,7 @@ else
 fi
 
 # Get git changes
-changes=$($git_diff)
+changes=$($git_diff 2>/dev/null)
 
 # Exit if no changes
 if [ -z "$changes" ]; then
@@ -22,9 +22,10 @@ fi
 prompt_template=$(cat <<-END
 You are skilled at writing short and meaningful git commit messages. You follow the Conventional Commits specification:
 
-- add: for adding function or feature
-- remove: for deleting a function or feature
-- fix: for fixing bugs
+  add: for adding function or feature
+  remove: for deleting a function or feature
+  fix: for fixing bugs
+  no prefix if none fit
 
 Please summarize the changes and compose a short message.
 Please only mention meaningful changes. Please revise the message carefully before sending it out.
@@ -36,19 +37,25 @@ Here're the changes:
 END
 )
 
-# Encode prompt and changes
-encoded_prompt_template=$(echo "$prompt_template" | jq -sR .)
-encoded_changes=$(echo "$changes" | jq -sR .)
+prompt_template=$(echo "$prompt_template" | jq -sR .)
+changes=$(echo "$changes" | jq -sR .)
 
 # Build JSON request body using jq for Groq API
-groq_request_body=$(jq -n --arg model "mixtral-8x7b-32768" --argjson prompt "$encoded_prompt_template" \
-  --argjson changes "$encoded_changes" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: 32768, stream: false, temperature: 0, top_p: 1, stop: null}')
+groq_model="mixtral-8x7b-32768"
+groq_max_tokens=32768
+if [ "$(basename $0)" == "cib" ]; then
+  groq_model="llama-3.1-70b-versatile"
+  groq_max_tokens=8000
+fi
+
+groq_request_body=$(jq -n --arg model "$groq_model" --arg prompt "$prompt_template" \
+--argjson changes "$changes" --argjson groq_max_tokens "$groq_max_tokens" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: $groq_max_tokens, stream: false, temperature: 0, top_p: 1, stop: null}')
 
 # Build JSON request body using jq for OpenAI API
-openai_request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --argjson prompt "$encoded_prompt_template" \
-  --argjson changes "$encoded_changes" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: 50, temperature: 0}')
+openai_request_body=$(jq -n --arg model "gpt-4o-mini-2024-07-18" --arg prompt "$prompt_template" \
+--argjson changes "$changes" \
+  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: ($prompt + $changes)}], max_tokens: 16384, temperature: 0}')
 
 # Function to get commit message from Groq API
 get_commit_message_groq() {
@@ -58,7 +65,7 @@ get_commit_message_groq() {
     --header "Content-Type: application/json" \
     --data "$groq_request_body")
 
-  echo "$response" | jq -r '.choices[0].message.content'
+  echo "$response"
 }
 
 # Function to get commit message from OpenAI API
@@ -69,30 +76,35 @@ get_commit_message_openai() {
     --header "Content-Type: application/json" \
     --data "$openai_request_body")
 
-  echo "$response" | jq -r '.choices[0].message.content'
+  echo "$response"
 }
 
 # Try Groq API first
-commit_message=$(get_commit_message_groq)
+response=$(get_commit_message_groq)
+commit_message=$(echo $response | jq -r '.choices[0].message.content')
 api_used="Groq API"
 
 # If Groq API fails due to rate limit, try OpenAI API
 if [[ -z "$commit_message" || "$commit_message" == "null" || "$commit_message" =~ "Rate limit reached" ]]; then
-  commit_message=$(get_commit_message_openai)
+  echo "$api_used failed with the following response:"
+  echo $response
+  response=$(get_commit_message_openai)
+  commit_message=$(echo $response | jq -r '.choices[0].message.content')
   api_used="OpenAI API"
 fi
 
 # Exit if the commit message is empty
 if [ -z "$commit_message" ] || [ "$commit_message" == "null" ]; then
-  echo 'Failed to generate a commit message:'
+  echo "$api_used also failed with the following response:"
   echo $response
   exit 1
 fi
 
 # Print the API used
 echo "Commit message generated using: $api_used"
-commit_message=$(echo $commit_message|sed 's/\\_/_/g'|sed 's/"//g')
+commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 
 # Commit changes
 $commit_command "$commit_message"
+
 
