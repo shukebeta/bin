@@ -20,17 +20,17 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing git commit messages and follow the conventional prefix:
+You are skilled at writing short and meaningful git commit messages. You follow the Conventional Commits specification:
 
-    feature: for new features
-    fix: for bug fixes
-    other: for other changes
+- add: for adding function or feature
+- remove: for deleting a function or feature
+- fix: for fixing bugs
 
-You will be given the changes from a 'git diff -w -b HEAD' command.
-Please summarize all meaningful changes into one commit message, no more than 100 characters.
-Respond only with the commit message. Remember to use proper prefix in the commit message.
-Do not mention unchanged aspects. Do not put double quote in the message. Do not escape underscore characters.
-Here are the changes:
+Please summarize the changes and compose a commit message
+Please only mention meaningful changes. Please revise the message carefully before sending it out.
+Do not include any other information/text rather than the commit message itself, make sure the message is shorter than 100 characters.
+
+Here're the changes:
 
 END
 )
@@ -90,6 +90,7 @@ fi
 
 # Print the API used
 echo "Commit message generated using: $api_used"
+commit_message=$(echo $commit_message|sed 's/\\_/_/g')
 
 # Commit changes
 $commit_command "$commit_message"
