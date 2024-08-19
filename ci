@@ -20,7 +20,7 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing short and meaningful git commit messages. You follow the Conventional Commits specification:
+You are skilled at writing git commit messages following these conventions:
 
   add: for adding function or feature
   remove: for deleting a function or feature
@@ -32,7 +32,7 @@ Please only mention meaningful changes. Please revise the message carefully befo
 THE COMMIT MESSAGE SHOULD NOT BE MORE THAN 100 CHARACTERS!!!!!
 Do not include any other information/text rather than the commit message itself.
 
-Here're the changes:
+Here are the changes:
 
 END
 )
