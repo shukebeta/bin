@@ -26,9 +26,10 @@ You are skilled at writing short and meaningful git commit messages. You follow 
 - remove: for deleting a function or feature
 - fix: for fixing bugs
 
-Please summarize the changes and compose a commit message
+Please summarize the changes and compose a short message.
 Please only mention meaningful changes. Please revise the message carefully before sending it out.
-Do not include any other information/text rather than the commit message itself, make sure the message is shorter than 100 characters.
+THE COMMIT MESSAGE SHOULD NOT BE MORE THAN 100 CHARACTERS!!!!!
+Do not include any other information/text rather than the commit message itself.
 
 Here're the changes:
 
@@ -90,7 +91,7 @@ fi
 
 # Print the API used
 echo "Commit message generated using: $api_used"
-commit_message=$(echo $commit_message|sed 's/\\_/_/g')
+commit_message=$(echo $commit_message|sed 's/\\_/_/g'|sed 's/"//g')
 
 # Commit changes
 $commit_command "$commit_message"
