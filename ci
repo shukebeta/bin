@@ -20,19 +20,16 @@ fi
 
 # Set prompt template
 prompt_template=$(cat <<-END
-You are skilled at writing git commit messages following these conventions:
+Analyze the following code changes and generate a concise, meaningful git commit message that:
 
-  add: for adding function or feature
-  remove: for deleting a function or feature
-  fix: for fixing bugs
-  no prefix if none fit
+1. Summarizes the main purpose or impact of the changes
+2. Is no longer than 100 characters (150 characters maximum if absolutely necessary)
+3. Uses present tense and imperative mood (e.g., "Add feature" not "Added feature")
+4. Focuses on the "what" and "why" rather than the "how"
 
-Please summarize the changes and compose a short message.
-Please only mention meaningful changes. Please revise the message carefully before sending it out.
-THE COMMIT MESSAGE SHOULD NOT BE MORE THAN 100 CHARACTERS!!!!!
-Do not include any other information/text rather than the commit message itself.
+Provide ONLY the commit message itself, without any additional text, explanations, or formatting.
 
-Here are the changes:
+Code changes:
 
 END
 )
