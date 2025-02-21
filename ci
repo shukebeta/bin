@@ -102,16 +102,50 @@ ticket_number=$(echo "$branch_name" | grep -oEi 'mt-[0-9]+' | tr 'a-z' 'A-Z')
 commit_message="$ticket_number $commit_message"
 commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 
-# Print the API used and the generated commit message
+# Create temporary file for editing
+temp_file=$(mktemp)
+echo "$commit_message" > "$temp_file"
+
+# Print initial API information
 echo "Commit message generated using: $api_used"
 echo ""
-echo ""
-echo "$commit_message"
-echo ""
-echo ""
 
-# Ask for confirmation
-read -p "Press Enter to continue with this commit message, or Ctrl+C to stop: "
+while true; do
+    # Show current message
+    echo "Current commit message:"
+    echo "$commit_message"
+    echo ""
+    echo ""
+
+    # Show options and get user input
+    echo "Options:"
+    echo "  Press Enter to commit with this message"
+    echo "  Press 'e' to edit the message in Vim"
+    echo "  Press Ctrl+C to cancel"
+    echo ""
+    read -n 1 -p "Your choice: " choice
+    echo ""
+
+    if [ "$choice" = "e" ]; then
+        # Open message in vim
+        vim "$temp_file"
+
+        # Read edited message
+        commit_message=$(cat "$temp_file")
+        echo ""
+    elif [ -n "$choice" ]; then
+        # If any other key was pressed (except Enter), exit
+        echo "Invalid choice. Please try again."
+        echo ""
+        continue
+    else
+        # Enter was pressed, break the loop to proceed with commit
+        break
+    fi
+done
+
+# Clean up temp file
+rm "$temp_file"
 
 # Commit changes
 $commit_command "$commit_message"
