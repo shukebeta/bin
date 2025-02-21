@@ -107,23 +107,20 @@ temp_file=$(mktemp)
 echo "$commit_message" > "$temp_file"
 
 # Print initial API information
-echo "Commit message generated using: $api_used"
+echo " $api_used generates:"
 echo ""
 
 while true; do
     # Show current message
-    echo "Current commit message:"
+    echo ""
     echo "$commit_message"
     echo ""
     echo ""
 
     # Show options and get user input
-    echo "Options:"
-    echo "  Press Enter to commit with this message"
-    echo "  Press 'e' to edit the message in Vim"
-    echo "  Press Ctrl+C to cancel"
+    echo " Enter to commit, 'e' to edit in Vim, Ctrl+C to cancel"
     echo ""
-    read -n 1 -p "Your choice: " choice
+    read -n 1 -p " Your choice: " choice
     echo ""
 
     if [ "$choice" = "e" ]; then
