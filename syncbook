@@ -29,9 +29,12 @@ local_dict_dir="/backup/koreader/dict"
 remote_dict_dir="/sdcard/koreader/data/dict"
 remote_screenshots_dir="/sdcard/koreader/screenshots"
 local_screenshots_dir="/backup/koreader"
+remote_notes_dir="/sdcard/koreader/clipboard"
+local_notes_dir="/backup/koreader/notes"
 
 # Use rsync for incremental synchronization
 rsync -avz --inplace --no-perms --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$local_dir" "$remote_user@$remote_host:$remote_dir" 2>/dev/null || { echo "ssh server is not running at $remote_host:$remote_port" && exit 1;}
 rsync -avz --inplace --no-perms --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$local_dict_dir" "$remote_user@$remote_host:$remote_dict_dir" 2>/dev/null || { echo "ssh server is not running at $remote_host:$remote_port" && exit 1;}
 rsync -avz --inplace --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$remote_user@$remote_host:$remote_screenshots_dir" "$local_screenshots_dir"
+rsync -avz --inplace --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$remote_user@$remote_host:$remote_notes_dir" "$local_notes_dir"
 

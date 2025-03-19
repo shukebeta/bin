@@ -12,7 +12,7 @@ sed -i '/^$/d' "$filename"
 # Add "书摘：" prefix to the first line
 sed -i '1s/^/书摘：/' "$filename"
 # Add "作者：" prefix to the second line
-sed -i '2s/^/作者：/' "$filename"
+#sed -i '2s/^/作者：/' "$filename"
 
 # Insert an extra empty line before the last non-empty line of the file
 sed -i -e ':a' -e '$!{N;ba}' -e 's/\(\S.*\)\n/\1\n\n/' "$filename"
