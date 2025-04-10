@@ -37,112 +37,62 @@ END
 
 prompt+="$changes"
 
-# Build JSON request body using jq for Groq API
-groq_model="llama-3.1-70b-versatile"
-groq_max_tokens=8000
-if [ "$(basename "$0")" == "cib" ]; then
-  groq_model="mixtral-8x7b-32768"
-  groq_max_tokens=32768
-fi
-groq_request_body=$(jq -n --arg model "$groq_model" --arg prompt "$prompt"  --argjson max_tokens "$groq_max_tokens"\
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: $max_tokens, stream: false, temperature: 0, top_p: 1, stop: null}')
-
-
-# Build JSON request body using jq for OpenAI API
-openai_request_body=$(jq -n --arg model "gpt-4o-mini" --arg prompt "$prompt" \
+#openai_request_body=$(jq -n --arg model "google/gemini-2.0-flash-exp:free" --arg prompt "$prompt" \
+openai_request_body=$(jq -n --arg model "google/gemini-2.5-pro-exp-03-25:free" --arg prompt "$prompt" \
   '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 16384, temperature: 0}')
 
-# Function to get commit message from Groq API
-get_commit_message_groq() {
-  response=$(curl -s --request POST \
-    --url https://api.groq.com/openai/v1/chat/completions \
-    --header "Authorization: Bearer $GROQ_API_KEY" \
-    --header "Content-Type: application/json" \
-    --data "$groq_request_body")
-  echo $response
-}
-
-# Function to get commit message from OpenAI API
 get_commit_message_openai() {
   response=$(curl -s --request POST \
-    --url https://api.openai.com/v1/chat/completions \
-    --header "Authorization: Bearer $OPENAI_API_KEY" \
+    --url https://openrouter.ai/api/v1/chat/completions \
+    --header "Authorization: Bearer $OPENROUTER_API_KEY" \
     --header "Content-Type: application/json" \
     --data "$openai_request_body")
   echo $response
 }
 
-# Try OPENAI API first
 response=$(get_commit_message_openai)
 commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
-api_used="OPENAI API"
 
-# If OPENAI API fails due to rate limit, try GROQ API
-if [[ -z "$commit_message" || "$commit_message" == "null" || "$commit_message" =~ "Rate limit reached|parse error" ]]; then
-  echo $response
-  response=$(get_commit_message_groq)
-  commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
-  api_used="GROQ API"
-fi
-
-# Exit if the commit message is empty
 if [ -z "$commit_message" ] || [ "$commit_message" == "null" ]; then
   echo 'Failed to generate a commit message:'
   echo $response
   exit 1
 fi
 
-# get current branch name
 branch_name=$(git rev-parse --abbrev-ref HEAD)
-
-# get ticket number from branch name
 ticket_number=$(echo "$branch_name" | grep -oEi 'mt-[0-9]+' | tr 'a-z' 'A-Z')
-
-# put the ticket number as a prefix
 commit_message="$ticket_number $commit_message"
 commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 
-# Create temporary file for editing
 temp_file=$(mktemp)
 echo "$commit_message" > "$temp_file"
 
-# Print initial API information
-echo " $api_used generates:"
+echo " OpenRouter generates:"
 echo ""
 
 while true; do
-    # Show current message
     echo ""
     echo "$commit_message"
     echo ""
     echo ""
 
-    # Show options and get user input
     echo " Enter to commit, 'e' to edit in Vim, Ctrl+C to cancel"
     echo ""
     read -n 1 -p " Your choice: " choice
     echo ""
 
     if [ "$choice" = "e" ]; then
-        # Open message in vim
         vim "$temp_file"
-
-        # Read edited message
         commit_message=$(cat "$temp_file")
         echo ""
     elif [ -n "$choice" ]; then
-        # If any other key was pressed (except Enter), exit
         echo "Invalid choice. Please try again."
         echo ""
         continue
     else
-        # Enter was pressed, break the loop to proceed with commit
         break
     fi
 done
 
-# Clean up temp file
 rm "$temp_file"
-
-# Commit changes
 $commit_command "$commit_message"
