@@ -38,7 +38,8 @@ END
 prompt+="$changes"
 
 #openai_request_body=$(jq -n --arg model "google/gemini-2.0-flash-exp:free" --arg prompt "$prompt" \
-openai_request_body=$(jq -n --arg model "google/gemini-2.5-pro-exp-03-25:free" --arg prompt "$prompt" \
+#openai_request_body=$(jq -n --arg model "google/gemini-2.5-pro-exp-03-25:free" --arg prompt "$prompt" \
+openai_request_body=$(jq -n --arg model "meta-llama/llama-4-maverick:free" --arg prompt "$prompt" \
   '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 16384, temperature: 0}')
 
 get_commit_message_openai() {
