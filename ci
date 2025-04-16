@@ -9,56 +9,87 @@ else
   commit_command="git commit -am"
 fi
 
-# Get git changes
-changes=$($git_diff 2>/dev/null)
+# Define static prompt text
+static_prompt=$(cat <<-END
+Analyze the following code diff. Generate a concise Git commit message subject line that summarizes the **primary goal** or **intent** of the changes.
 
-if [ -z "$changes" ]; then
-  echo "No changes to commit."
-  exit 0
-fi
+Follow these guidelines:
+1.  Focus on the **"what"** (the core change) and **"why"** (the reason/purpose), not the "how" (implementation details).
+2.  Use present tense, imperative mood (e.g., "Fix bug", "Add feature").
+3.  Keep it under 100 characters (150 max if essential).
+4.  Ignore changes consisting only of whitespace.
 
-prompt=$(cat <<-END
-Analyze the following code changes and generate a concise, meaningful git commit message that:
-
-0. Ignore changes that only contain space changes
-1. Summarizes the main purpose or impact of the changes
-2. Is no longer than 100 characters (150 characters maximum if absolutely necessary)
-3. Uses present tense and imperative mood (e.g., "Add feature" not "Added feature")
-4. Focuses on the "what" and "why" rather than the "how"
-
-Provide ONLY the commit message itself, without any additional text, explanations, or formatting.
-
+PROVIDE ONLY THE COMMIT MESSAGE TEXT ITSELF, WITHOUT ANY SURROUNDING TEXT OR EXPLANATION OR FORMATTING.
 Code changes:
 
-PROVIDE ONLY THE COMMIT MESSAGE ITSELF, WITHOUT ANY ADDITIONAL TEXT, EXPLANATIONS, OR FORMATTING.
-Code changes:
 END
 )
 
-prompt+="$changes"
-
-#openai_request_body=$(jq -n --arg model "google/gemini-2.0-flash-exp:free" --arg prompt "$prompt" \
-#openai_request_body=$(jq -n --arg model "google/gemini-2.5-pro-exp-03-25:free" --arg prompt "$prompt" \
-openai_request_body=$(jq -n --arg model "meta-llama/llama-4-maverick:free" --arg prompt "$prompt" \
-  '{model: $model, messages: [{role:"system",content:"You are a programmer"},{role: "user", content: $prompt}], max_tokens: 16384, temperature: 0}')
+# Define model and system message variables
+model="meta-llama/llama-4-maverick:free"
+system_message="You are a programmer"
 
 get_commit_message_openai() {
-  response=$(curl -s --request POST \
-    --url https://openrouter.ai/api/v1/chat/completions \
-    --header "Authorization: Bearer $OPENROUTER_API_KEY" \
-    --header "Content-Type: application/json" \
-    --data "$openai_request_body")
-  echo $response
+  # Execute git diff and pipe its output directly into jq's stdin.
+  # jq reads the diff using -R -s.
+  # The static prompt text is passed as an argument.
+  # jq combines the static prompt and the diff (stdin '.') for the user message.
+  # The resulting JSON is piped directly to curl.
+  response=$($git_diff | jq -R -s --arg model "$model" --arg system_content "$system_message" --arg static_prompt "$static_prompt" \
+      '{
+          model: $model,
+          messages: [
+              {role: "system", content: $system_content},
+              {role: "user", content: ($static_prompt + .) } # Combine static prompt and stdin diff
+          ],
+          max_tokens: 16384,
+          temperature: 0
+      }' | curl -s --request POST \
+          --url https://openrouter.ai/api/v1/chat/completions \
+          --header "Authorization: Bearer $OPENROUTER_API_KEY" \
+          --header "Content-Type: application/json" \
+          --data-binary @-) # Read JSON data from stdin
+
+  # Check if curl command itself failed (e.g., network error) before checking response content
+  if [ $? -ne 0 ]; then
+      echo "Error: curl command failed." >&2
+      exit 1
+  fi
+
+  # Check if the response is empty or indicates an API error before parsing
+  if [ -z "$response" ]; then
+      echo "Error: Empty response from API." >&2
+      exit 1
+  fi
+
+  # Attempt to parse the commit message
+  commit_msg=$(echo "$response" | jq -r '.choices[0].message.content')
+
+  # Check if jq failed or the extracted message is null/empty
+  if [ $? -ne 0 ] || [ -z "$commit_msg" ] || [ "$commit_msg" == "null" ]; then
+      echo 'Failed to generate or parse commit message:' >&2
+      echo "$response" >&2 # Print the raw response for debugging
+      exit 1
+  fi
+
+  echo "$commit_msg" # Output the successfully extracted commit message
 }
 
-response=$(get_commit_message_openai)
-commit_message=$(echo "$response" | jq -r '.choices[0].message.content')
+# Call the function and capture the commit message
+commit_message=$(get_commit_message_openai)
 
-if [ -z "$commit_message" ] || [ "$commit_message" == "null" ]; then
-  echo 'Failed to generate a commit message:'
-  echo $response
-  exit 1
+# Exit if the function failed (indicated by exit status > 0)
+if [ $? -ne 0 ]; then
+    # Error message already printed by the function
+    exit 1
 fi
+
+# The check below is now redundant as the function handles errors and exits
+# if [ -z "$commit_message" ] || [ "$commit_message" == "null" ]; then
+#   echo 'Failed to generate a commit message:'
+#   echo $response
+#   exit 1
+# fi
 
 branch_name=$(git rev-parse --abbrev-ref HEAD)
 ticket_number=$(echo "$branch_name" | grep -oEi 'mt-[0-9]+' | tr 'a-z' 'A-Z')
