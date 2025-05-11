@@ -46,7 +46,7 @@ get_commit_message_openai() {
           temperature: 0
       }' | curl -s --request POST \
           --url https://openrouter.ai/api/v1/chat/completions \
-          --header "Authorization: Bearer $OPENROUTER_API_KEY" \
+          --header "Authorization: Bearer $OR_FOR_CI_API_KEY" \
           --header "Content-Type: application/json" \
           --data-binary @-) # Read JSON data from stdin
 
@@ -99,7 +99,7 @@ commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 temp_file=$(mktemp)
 echo "$commit_message" > "$temp_file"
 
-echo " OpenRouter generates:"
+echo " $model generates:"
 echo ""
 
 while true; do
