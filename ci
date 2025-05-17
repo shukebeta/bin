@@ -18,6 +18,7 @@ Follow these guidelines:
 2.  Use present tense, imperative mood (e.g., "Fix bug", "Add feature").
 3.  Keep it under 100 characters (150 max if essential).
 4.  Ignore changes consisting only of whitespace.
+5.  For changes related to documents (e.g., README, ChangeLog), prefix the commit message with "Update document:".
 
 PROVIDE ONLY THE COMMIT MESSAGE TEXT ITSELF, WITHOUT ANY SURROUNDING TEXT OR EXPLANATION OR FORMATTING.
 Code changes:
@@ -26,57 +27,65 @@ END
 )
 
 # Define model and system message variables
-model="meta-llama/llama-4-maverick:free"
+models=("meta-llama/llama-4-maverick:free" "meta-llama/llama-4-scout:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
 system_message="You are a programmer"
 
-get_commit_message_openai() {
-  # Execute git diff and pipe its output directly into jq's stdin.
-  # jq reads the diff using -R -s.
-  # The static prompt text is passed as an argument.
-  # jq combines the static prompt and the diff (stdin '.') for the user message.
-  # The resulting JSON is piped directly to curl.
-  response=$($git_diff | jq -R -s --arg model "$model" --arg system_content "$system_message" --arg static_prompt "$static_prompt" \
-      '{
-          model: $model,
-          messages: [
-              {role: "system", content: $system_content},
-              {role: "user", content: ($static_prompt + .) } # Combine static prompt and stdin diff
-          ],
-          max_tokens: 16384,
-          temperature: 0
-      }' | curl -s --request POST \
-          --url https://openrouter.ai/api/v1/chat/completions \
-          --header "Authorization: Bearer $OR_FOR_CI_API_KEY" \
-          --header "Content-Type: application/json" \
-          --data-binary @-) # Read JSON data from stdin
+get_commit_message_ai() {
+  local commit_msg=""
+  for current_model in "${models[@]}"; do
+    echo "Trying model: $current_model" >&2
+    # Execute git diff and pipe its output directly into jq's stdin.
+    # jq reads the diff using -R -s.
+    # The static prompt text is passed as an argument.
+    # jq combines the static prompt and the diff (stdin '.') for the user message.
+    # The resulting JSON is piped directly to curl.
+    response=$($git_diff | jq -R -s --arg model "$current_model" --arg system_content "$system_message" --arg static_prompt "$static_prompt" \
+        '{
+            model: $model,
+            messages: [
+                {role: "system", content: $system_content},
+                {role: "user", content: ($static_prompt + .) } # Combine static prompt and stdin diff
+            ],
+            max_tokens: 16384,
+            temperature: 0
+        }' | curl -s --request POST \
+            --url https://openrouter.ai/api/v1/chat/completions \
+            --header "Authorization: Bearer $OR_FOR_CI_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data-binary @-) # Read JSON data from stdin
 
-  # Check if curl command itself failed (e.g., network error) before checking response content
-  if [ $? -ne 0 ]; then
-      echo "Error: curl command failed." >&2
-      exit 1
-  fi
+    # Check if curl command itself failed (e.g., network error) before checking response content
+    if [ $? -ne 0 ]; then
+        echo "Error: curl command failed for model $current_model." >&2
+        continue
+    fi
 
-  # Check if the response is empty or indicates an API error before parsing
-  if [ -z "$response" ]; then
-      echo "Error: Empty response from API." >&2
-      exit 1
-  fi
+    # Check if the response is empty or indicates an API error before parsing
+    if [ -z "$response" ]; then
+        echo "Error: Empty response from API for model $current_model." >&2
+        continue
+    fi
 
-  # Attempt to parse the commit message
-  commit_msg=$(echo "$response" | jq -r '.choices[0].message.content')
+    # Attempt to parse the commit message
+    commit_msg=$(echo "$response" | jq -r '.choices[0].message.content')
 
-  # Check if jq failed or the extracted message is null/empty
-  if [ $? -ne 0 ] || [ -z "$commit_msg" ] || [ "$commit_msg" == "null" ]; then
-      echo 'Failed to generate or parse commit message:' >&2
-      echo "$response" >&2 # Print the raw response for debugging
-      exit 1
-  fi
+    # Check if jq failed or the extracted message is null/empty
+    if [ $? -eq 0 ] && [ -n "$commit_msg" ] && [ "$commit_msg" != "null" ]; then
+        echo "$commit_msg" # Output the successfully extracted commit message
+        return 0
+    else
+        echo "Failed to generate or parse commit message with model $current_model:" >&2
+        echo "$response" >&2 # Print the raw response for debugging
+        continue
+    fi
+  done
 
-  echo "$commit_msg" # Output the successfully extracted commit message
+  echo "Error: All models failed to generate a commit message." >&2
+  exit 1
 }
 
 # Call the function and capture the commit message
-commit_message=$(get_commit_message_openai)
+commit_message=$(get_commit_message_ai)
 
 # Exit if the function failed (indicated by exit status > 0)
 if [ $? -ne 0 ]; then
@@ -99,7 +108,7 @@ commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 temp_file=$(mktemp)
 echo "$commit_message" > "$temp_file"
 
-echo " $model generates:"
+echo " OpenRouter generates:"
 echo ""
 
 while true; do

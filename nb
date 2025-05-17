@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Function to create a new branch from given base
+create_branch() {
+    local base_branch=$1
+    
+    # Check if correct number of arguments is provided
+    if [[ $# -eq 2 ]] || [[ $# -eq 3 ]]; then
+        # Set suffix if provided
+        local suffix=""
+        [[ $# -eq 3 ]] && suffix="-$3"
+        # Run git checkout to create and switch to a new branch
+        git checkout -b "feature/mt-$2$suffix" "origin/$base_branch"
+        exit $?
+    else
+        echo "Usage: $0 <anumber> [suffix]"
+        exit 1
+    fi
+}
+
+# Check if the current directory is a git repository
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    echo "Error: Current directory is not a git repository."
+    exit 1
+fi
+
+# Run git fetch to get the latest changes from the remote repository
+git fetch
+
+# Define preferred base branches
+preferred_branches=("integration" "main" "master")
+base_branch_found=""
+
+# Find the first available preferred branch
+for branch_name in "${preferred_branches[@]}"; do
+    if git show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
+        base_branch_found="$branch_name"
+        break
+    fi
+done
+
+# If a preferred branch is found, use it
+if [[ -n "$base_branch_found" ]]; then
+    create_branch "$base_branch_found" "$@"
+else
+    echo "Error: None of the preferred base branches (origin/integration, origin/main, origin/master) were found."
+    exit 1
+fi
