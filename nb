@@ -1,8 +1,12 @@
 #!/bin/bash
 
+# Function to get repository prefix
+source ~/my-config-files/bash.functions
+
 # Function to create a new branch from given base
 create_branch() {
     local base_branch=$1
+    local prefix=$(get_repo_prefix)
     
     # Check if correct number of arguments is provided
     if [[ $# -eq 2 ]] || [[ $# -eq 3 ]]; then
@@ -10,7 +14,7 @@ create_branch() {
         local suffix=""
         [[ $# -eq 3 ]] && suffix="-$3"
         # Run git checkout to create and switch to a new branch
-        git checkout -b "feature/mt-$2$suffix" "origin/$base_branch"
+        git checkout -b "feature/$prefix-$2$suffix" "origin/$base_branch"
         exit $?
     else
         echo "Usage: $0 <anumber> [suffix]"

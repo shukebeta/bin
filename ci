@@ -106,9 +106,8 @@ commit_message="$ticket_number $commit_message"
 commit_message=$(echo "$commit_message"|sed 's/\\_/_/g'|sed 's/"//g')
 
 temp_file=$(mktemp)
-echo "$commit_message" > "$temp_file"
 
-echo " OpenRouter generates:"
+echo "$commit_message" > "$temp_file"
 echo ""
 
 while true; do

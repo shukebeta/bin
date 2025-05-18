@@ -1,8 +1,12 @@
 #!/bin/bash
 
+# Function to get repository prefix
+source ~/my-config-files/bash.functions
+
 show_usage() {
+    local prefix=$(get_repo_prefix)
     echo "Usage:"
-    echo "  sw <ticket_number> [suffix]    # switches to feature/mt-<number>-axo[suffix] or feature/mt-<number>[suffix]"
+    echo "  sw <ticket_number> [suffix]    # switches to feature/$prefix-<number>-axo[suffix] or feature/$prefix-<number>[suffix]"
     echo "  gsw <branch-name>              # Switches to specified branch"
     echo "  sw|gsw -                       # Switches to previous branch"
     exit 1
@@ -74,7 +78,7 @@ script_name=$(basename "$0")
 
 case "$script_name" in
     sw)
-        handle_branch_switch "mt" "$@"
+        handle_branch_switch "$(get_repo_prefix)" "$@"
         ;;
         
 
