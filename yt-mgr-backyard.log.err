@@ -1,1 +1,0 @@
-ssh yt-mgr-backyard -- tail -n 100 -f /tmp/yangtaoabc.mgmt.stderr.txt

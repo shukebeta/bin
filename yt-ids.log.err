@@ -1,2 +1,0 @@
-echo "You are viewing the log from yt-ids:"
-ssh yt-ids -- tail -n 100 -f /tmp/Yangtaoabc.IdServer.stderr.txt

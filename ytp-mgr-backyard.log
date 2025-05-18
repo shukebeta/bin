@@ -1,1 +1,0 @@
-ssh ytp-web-backup -- tail -n 200 -f /tmp/Yangtaoabc.Management.stdout.txt

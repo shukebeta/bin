@@ -1,1 +1,0 @@
-ssh ytp-web-001 -- tail -n 100 -f /tmp/Yangtaoabc.IdServer.stdout.txt
