@@ -1,0 +1,490 @@
+#!/bin/bash
+
+# Path management script for maintaining PATH environment variable
+# Usage: path add|remove <path>
+
+BASHRC_FILE="$HOME/.bashrc"
+PATH_ARRAY_VAR="CUSTOM_PATHS"
+
+# Function to initialize or reset the original PATH
+init_original_path() {
+    if [ -z "$ORIGINAL_PATH" ]; then
+        export ORIGINAL_PATH="$PATH"
+        echo "Original PATH stored: $ORIGINAL_PATH"
+    else
+        echo "Original PATH already stored: $ORIGINAL_PATH"
+    fi
+}
+
+# Function to clean up non-existent paths
+clean_paths() {
+    local current_paths=$(read_custom_paths)
+
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths to clean"
+        return 0
+    fi
+
+    echo "Checking custom paths for existence..."
+
+    local valid_paths=""
+    local removed_count=0
+
+    # Parse each quoted path and check if it exists
+    while IFS= read -r path; do
+        if [ -n "$path" ]; then
+            # Remove quotes
+            local clean_path=$(echo "$path" | sed 's/"//g')
+
+            local expanded_clean=$(expand_tilde "$clean_path")
+            if [ -d "$expanded_clean" ]; then
+                # Path exists, keep it
+                if [ -n "$valid_paths" ]; then
+                    valid_paths="$valid_paths \"$clean_path\""
+                else
+                    valid_paths="\"$clean_path\""
+                fi
+                echo "✓ Keeping: $clean_path"
+            else
+                # Path doesn't exist, remove it
+                echo "✗ Removing: $clean_path (directory not found)"
+                ((removed_count++))
+            fi
+        fi
+    done < <(echo "$current_paths" | grep -o '"[^"]*"')
+
+    if [ $removed_count -eq 0 ]; then
+        echo "All custom paths are valid - no cleanup needed"
+        return 0
+    fi
+
+    # Update .bashrc with cleaned paths
+    write_custom_paths "$valid_paths"
+
+    echo ""
+    echo "Cleanup completed: removed $removed_count invalid path(s)"
+    echo "Run 'source ~/.bashrc' or start a new shell to update PATH."
+}
+
+# Function to convert existing PATH exports to custom paths array
+convert_existing_paths() {
+    if [ ! -f "$BASHRC_FILE" ]; then
+        echo "No .bashrc file found"
+        return 1
+    fi
+
+    echo "Scanning .bashrc for existing PATH export statements..."
+
+    # Find lines that export PATH with custom additions
+    local path_exports=$(grep -n "^export PATH=" "$BASHRC_FILE" | grep -v "CUSTOM_PATHS_STR" | grep -v "ORIGINAL_PATH")
+
+    if [ -z "$path_exports" ]; then
+        echo "No manual PATH export statements found in .bashrc"
+        return 0
+    fi
+
+    echo "Found existing PATH exports:"
+    echo "$path_exports"
+    echo ""
+
+    local converted_paths=""
+    local line_numbers=""
+
+    # Process each PATH export line
+    while IFS= read -r line; do
+        local line_num=$(echo "$line" | cut -d: -f1)
+        local export_statement=$(echo "$line" | cut -d: -f2-)
+
+        # Extract custom paths from statements like: export PATH="custom1:custom2:$PATH"
+        # or export PATH=$PATH:custom1:custom2
+        # More robust approach: parse the entire PATH statement and extract custom parts
+        # This handles any format with $PATH in it
+        local custom_part=""
+
+        # Extract the value part after "export PATH="
+        if [[ "$export_statement" =~ export\ PATH=(.*)$ ]]; then
+            local path_value="${BASH_REMATCH[1]}"
+            
+            # Remove quotes if present
+            path_value=$(echo "$path_value" | sed 's/^"//;s/"$//')
+            
+            # Split by $PATH and extract custom parts
+            if [[ "$path_value" == *'$PATH'* ]]; then
+                # Use string manipulation to split on $PATH
+                local before_path="${path_value%%\$PATH*}"  # Everything before $PATH
+                local after_path="${path_value#*\$PATH}"   # Everything after $PATH
+                
+                # Clean up colons at boundaries
+                before_path=$(echo "$before_path" | sed 's/:$//')  # Remove trailing colon
+                after_path=$(echo "$after_path" | sed 's/^://')    # Remove leading colon
+                
+                # Combine non-empty parts
+                if [ -n "$before_path" ] && [ -n "$after_path" ]; then
+                    custom_part="$before_path:$after_path"
+                elif [ -n "$before_path" ]; then
+                    custom_part="$before_path"
+                elif [ -n "$after_path" ]; then
+                    custom_part="$after_path"
+                fi
+            else
+                # No $PATH in the statement - treat entire value as custom
+                custom_part="$path_value"
+            fi
+        fi
+        if [ -n "$custom_part" ]; then
+            # Split by colon and process each path
+            IFS=':' read -ra PATHS <<< "$custom_part"
+            for path_item in "${PATHS[@]}"; do
+                # Clean up the path (remove quotes, spaces)
+                local clean_path=$(echo "$path_item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/^"//;s/"$//')
+
+                if [ -n "$clean_path" ] && [ "$clean_path" != '$PATH' ]; then
+                    # Normalize the path
+                    local normalized=$(normalize_path "$clean_path")
+                    
+                    # Expand tilde if present for existence check
+                    local expanded=$(expand_tilde "$normalized")
+                    
+                    # Check if path exists (using expanded path for test)
+                    if [ -d "$expanded" ]; then
+                        if [ -n "$converted_paths" ]; then
+                            converted_paths="$converted_paths \"$normalized\""
+                        else
+                            converted_paths="\"$normalized\""
+                        fi
+                        echo "✓ Converting: $clean_path → $normalized"
+                    else
+                        echo "⚠ Skipping non-existent: $clean_path (expanded to: $expanded)"
+                    fi
+                fi
+            done
+
+            # Track line numbers to remove
+            if [ -n "$line_numbers" ]; then
+                line_numbers="$line_numbers $line_num"
+            else
+                line_numbers="$line_num"
+            fi
+        fi
+
+    done <<< "$path_exports"
+
+    if [ -z "$converted_paths" ]; then
+        echo "No valid paths found to convert"
+        return 0
+    fi
+
+    # Read existing custom paths
+    local existing_paths=$(read_custom_paths)
+
+    # Merge with existing custom paths (avoid duplicates)
+    local final_paths="$existing_paths"
+
+    # Add converted paths that aren't already in custom paths
+    while IFS= read -r path; do
+        if [ -n "$path" ]; then
+            if [[ "$existing_paths" != *"$path"* ]]; then
+                if [ -n "$final_paths" ]; then
+                    final_paths="$final_paths $path"
+                else
+                    final_paths="$path"
+                fi
+            fi
+        fi
+    done <<< $(echo "$converted_paths" | grep -o '"[^"]*"')
+
+    # Remove old PATH export lines (in reverse order to maintain line numbers)
+    if [ -n "$line_numbers" ]; then
+        echo ""
+        echo "Removing old PATH export statements from .bashrc..."
+        for line_num in $(echo "$line_numbers" | tr ' ' '\n' | sort -nr); do
+            sed -i "${line_num}d" "$BASHRC_FILE"
+            echo "Removed line $line_num"
+        done
+    fi
+
+    # Write consolidated custom paths
+    write_custom_paths "$final_paths"
+
+    echo ""
+    echo "✅ Conversion completed!"
+    echo "All PATH modifications have been consolidated into the custom paths array."
+    echo "Run 'source ~/.bashrc' to apply changes."
+}
+
+# Function to normalize path separators (convert Windows to Unix style)
+normalize_path() {
+    local input_path="$1"
+
+    # Convert Windows backslashes to forward slashes
+    local normalized=$(echo "$input_path" | sed 's|\\|/|g')
+
+    # Convert Windows drive letters (C:, D:, etc.) to Unix style (/c, /d, etc.)
+    # Handle cases like "C:/path" or "C:\path"
+    if [[ "$normalized" =~ ^[A-Za-z]: ]]; then
+        local drive_letter=$(echo "$normalized" | cut -c1 | tr '[:upper:]' '[:lower:]')
+        local remaining_path=$(echo "$normalized" | cut -c3-)
+        normalized="/$drive_letter$remaining_path"
+    fi
+
+    echo "$normalized"
+}
+# Function to expand tilde to home directory
+expand_tilde() {
+    local path="$1"
+    
+    # If path starts with ~/, replace with $HOME/
+    if [[ "$path" == ~/* ]]; then
+        echo "${HOME}${path:1}"
+    # If path is exactly ~, replace with $HOME
+    elif [[ "$path" == "~" ]]; then
+        echo "$HOME"
+    # If path starts with ~username/, expand to that user's home
+    elif [[ "$path" == ~*/* ]]; then
+        # This is more complex and may not work in all environments
+        # For safety, we'll use eval (though generally discouraged)
+        eval echo "$path"
+    else
+        # No tilde, return as-is
+        echo "$path"
+    fi
+}
+
+# Function to read current custom paths from .bashrc
+read_custom_paths() {
+    if [ ! -f "$BASHRC_FILE" ]; then
+        return 0
+    fi
+    
+    # Check if we have a multiline CUSTOM_PATHS array
+    if grep -q "^$PATH_ARRAY_VAR=($" "$BASHRC_FILE" 2>/dev/null; then
+        # Extract paths from multiline format
+        local paths=""
+        local in_array=false
+        
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^CUSTOM_PATHS=\($ ]]; then
+                in_array=true
+                continue
+            elif [[ "$line" =~ ^[[:space:]]*\)$ ]] && [ "$in_array" = true ]; then
+                break
+            elif [ "$in_array" = true ] && [[ "$line" =~ ^[[:space:]]*\".*\"[[:space:]]*$ ]]; then
+                # Extract the quoted path, preserving quotes
+                local path=$(echo "$line" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+                if [ -n "$paths" ]; then
+                    paths="$paths $path"
+                else
+                    paths="$path"
+                fi
+            fi
+        done < "$BASHRC_FILE"
+        
+        echo "$paths"
+    elif grep -q "^$PATH_ARRAY_VAR=" "$BASHRC_FILE" 2>/dev/null; then
+        # Fallback to single-line format (backward compatibility)
+        grep "^$PATH_ARRAY_VAR=" "$BASHRC_FILE" | head -1 | sed 's/^[^(]*(//' | sed 's/)$//'
+    fi
+}
+
+# Function to write custom paths array to .bashrc
+write_custom_paths() {
+    local paths_string="$1"
+    
+    # Remove existing CUSTOM_PATHS line and related exports
+    if [ -f "$BASHRC_FILE" ]; then
+        sed -i "/^$PATH_ARRAY_VAR=/d" "$BASHRC_FILE"
+        sed -i "/^export PATH=.*\$CUSTOM_PATHS_STR/d" "$BASHRC_FILE"
+        sed -i "/^CUSTOM_PATHS_STR=/d" "$BASHRC_FILE"
+        sed -i "/# Custom PATH management - added by path script/d" "$BASHRC_FILE"
+        sed -i "/# Store original PATH on first run to prevent duplicates/d" "$BASHRC_FILE"
+        sed -i "/if \[ -z \"\$ORIGINAL_PATH\" \]; then/d" "$BASHRC_FILE"
+        sed -i "/export ORIGINAL_PATH=\"\$PATH\"/d" "$BASHRC_FILE"
+        sed -i "/fi/d" "$BASHRC_FILE"
+        
+        # Remove multiline array (more comprehensive cleanup)
+        # This removes the entire CUSTOM_PATHS=( ... ) block even if it spans multiple lines
+        sed -i '/^CUSTOM_PATHS=(/,/^)/d' "$BASHRC_FILE"
+    fi
+    
+    # Add new CUSTOM_PATHS array and export statement
+    if [ -n "$paths_string" ]; then
+        echo "" >> "$BASHRC_FILE"
+        echo "# Custom PATH management - added by path script" >> "$BASHRC_FILE"
+        echo "# Store original PATH on first run to prevent duplicates" >> "$BASHRC_FILE"
+        echo 'if [ -z "$ORIGINAL_PATH" ]; then' >> "$BASHRC_FILE"
+        echo '    export ORIGINAL_PATH="$PATH"' >> "$BASHRC_FILE"
+        echo 'fi' >> "$BASHRC_FILE"
+        echo "" >> "$BASHRC_FILE"
+        
+        # Write multiline array format
+        echo "$PATH_ARRAY_VAR=(" >> "$BASHRC_FILE"
+        
+        # Parse each quoted path and write it on a separate line with proper indentation
+        while IFS= read -r path; do
+            if [ -n "$path" ]; then
+                echo "    $path" >> "$BASHRC_FILE"
+            fi
+        done < <(echo "$paths_string" | grep -o '"[^"]*"')
+        
+        echo ")" >> "$BASHRC_FILE"
+        echo 'CUSTOM_PATHS_STR=$(IFS=":"; echo "${CUSTOM_PATHS[*]}")' >> "$BASHRC_FILE"
+        echo 'export PATH="$ORIGINAL_PATH:$CUSTOM_PATHS_STR"' >> "$BASHRC_FILE"
+    fi
+}
+# Function to add a path
+add_path() {
+    local new_path="$1"
+    local normalized_path=$(normalize_path "$new_path")
+
+    # Check if the path actually exists
+    if [ ! -d "$normalized_path" ]; then
+        echo "Error: Directory '$normalized_path' does not exist"
+        echo "Please create the directory first or check the path spelling"
+        return 1
+    fi
+
+    # Check if path already exists in current PATH
+    if [[ ":$PATH:" == *":$normalized_path:"* ]]; then
+        echo "Path '$normalized_path' is already in PATH"
+        return 0
+    fi
+
+    # Read current custom paths
+    local current_paths=$(read_custom_paths)
+
+    # Check if path is already in custom paths (properly quoted)
+    if [[ "$current_paths" == *"\"$normalized_path\""* ]]; then
+        echo "Path '$normalized_path' is already in custom paths"
+        return 0
+    fi
+
+    # Add new path to the list (always quoted to handle spaces)
+    if [ -n "$current_paths" ]; then
+        current_paths="$current_paths \"$normalized_path\""
+    else
+        current_paths="\"$normalized_path\""
+    fi
+
+    # Write updated paths to .bashrc
+    write_custom_paths "$current_paths"
+
+    # Update current session's PATH (use original PATH if available)
+    if [ -n "$ORIGINAL_PATH" ]; then
+        export PATH="$ORIGINAL_PATH:$normalized_path"
+    else
+        export PATH="$PATH:$normalized_path"
+    fi
+
+    echo "Added '$normalized_path' to PATH"
+
+    # Check if we're being sourced or executed
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+        # Script is being executed, not sourced - PATH change won't persist to parent shell
+        echo "⚠️  Current session PATH not updated (script running in subshell)"
+        echo "Run one of these commands to update your current session:"
+        echo "   export PATH=\"$PATH\""
+        echo "   source ~/.bashrc"
+        echo ""
+        echo "Or use: source $0 add '$new_path' (to update current session directly)"
+    else
+        # Script is being sourced - PATH change will persist
+        echo "✅ Current session PATH updated successfully"
+        echo "Changes will persist. Run 'source ~/.bashrc' in new shells to load saved configuration."
+    fi
+}
+
+# Function to remove a path
+remove_path() {
+    local target_path="$1"
+    local normalized_path=$(normalize_path "$target_path")
+
+    # Read current custom paths
+    local current_paths=$(read_custom_paths)
+
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths found in .bashrc"
+        return 1
+    fi
+
+    # Remove the target path from the list (handle quoted paths properly)
+    local updated_paths=$(echo "$current_paths" | sed "s|\"$normalized_path\"||g" | sed 's/  \+/ /g' | sed 's/^ *//;s/ *$//')
+
+    # Check if anything was actually removed
+    if [ "$current_paths" = "$updated_paths" ]; then
+        echo "Path '$normalized_path' not found in custom paths"
+        return 1
+    fi
+
+    # Write updated paths to .bashrc
+    write_custom_paths "$updated_paths"
+
+    echo "Removed '$normalized_path' from custom paths"
+    echo "Run 'source ~/.bashrc' or start a new shell to update PATH."
+}
+
+
+# Function to list custom paths
+list_paths() {
+    local current_paths=$(read_custom_paths)
+
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths configured"
+    else
+        echo "Custom paths:"
+        # Parse quoted paths properly and display them
+        echo "$current_paths" | grep -o '"[^"]*"' | sed 's/"//g' | nl -w2 -s'. '
+    fi
+}
+
+# Main script logic
+case "$1" in
+    "add")
+        if [ -z "$2" ]; then
+            echo "Usage: path add <path>"
+            exit 1
+        fi
+        add_path "$2"
+        ;;
+    "remove")
+        if [ -z "$2" ]; then
+            echo "Usage: path remove <path>"
+            exit 1
+        fi
+        remove_path "$2"
+        ;;
+    "list")
+        list_paths
+        ;;
+    "init")
+        init_original_path
+        ;;
+    "clean")
+        clean_paths
+        ;;
+    "convert")
+        convert_existing_paths
+        ;;
+    *)
+        echo "Usage: path {add|remove|list|init|clean|convert} [path]"
+        echo ""
+        echo "Commands:"
+        echo "  add <path>     Add a path to PATH environment variable"
+        echo "  remove <path>  Remove a path from custom PATH entries"
+        echo "  list           Show all custom paths"
+        echo "  init           Store current PATH as the original baseline"
+        echo "  clean          Remove non-existent directories from custom paths"
+        echo "  convert        Convert existing PATH exports in .bashrc to custom paths array"
+        echo ""
+        echo "Note: To update your current session's PATH immediately, use:"
+        echo "  source path add <path>    (instead of ./path add <path>)"
+        echo "  source path remove <path> (instead of ./path remove <path>)"
+        echo ""
+        echo "Examples:"
+        echo "  path add /usr/local/myapp/bin"
+        echo "  path add 'C:\\Program Files\\My App\\bin'"
+        echo "  path convert  # Clean up existing .bashrc PATH exports"
+        echo "  path clean    # Remove non-existent directories"
+        echo "  path list"
+        exit 1
+        ;;
+esac
