@@ -1,0 +1,93 @@
+#!/bin/bash
+
+# Check if commit hash is provided
+if [ -z "$1" ]; then
+    echo "Error: Commit hash is required as an argument."
+    exit 1
+fi
+
+convert_to_uppercase() {
+    # Enable case-insensitive matching
+    shopt -s nocasematch
+
+    if [[ $1 =~ ^(HEAD|FETCH_HEAD|ORIG_HEAD|MERGE_HEAD)(\~[0-9]+|\^[0-9]*)* ]]; then
+        # Convert to uppercase
+        echo "${1^^}"
+    else
+        # Return original string
+        echo "$1"
+    fi
+
+    # Reset case-sensitivity to default
+    shopt -u nocasematch
+}
+
+start_hash=$(convert_to_uppercase "$1")
+end_hash=$(convert_to_uppercase "${2:-HEAD}")
+
+# Define static prompt text
+static_prompt=$(cat <<-END
+Analyze the following code diff. Generate a concise summary (under 100 words) of the **key changes** made between the specified commit hashes. Present the changes in a bullet-point list format, focusing on the main modifications and their impact.
+Code changes:
+END
+)
+
+# Define model and system message variables
+models=("mistralai/devstral-small:free" "meta-llama/llama-4-maverick:free" "meta-llama/llama-4-scout:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
+system_message="You are a programmer"
+
+# Function to get summary from AI model with failover
+get_summary_ai() {
+  local start_hash="$1"
+  local end_hash="$2"
+  local response=""
+  local summary=""
+  for current_model in "${models[@]}"; do
+    echo "Trying model: $current_model" >&2
+    response=$(git diff -w -b $start_hash..$end_hash | jq -R -s --arg model "$current_model" --arg system_content "$system_message" --arg static_prompt "$static_prompt" \
+        '{
+            model: $model,
+            messages: [
+                {role: "system", content: $system_content},
+                {role: "user", content: ($static_prompt + .) }
+            ],
+            max_tokens: 16384,
+            temperature: 0
+        }' | curl -s --request POST \
+            --url https://openrouter.ai/api/v1/chat/completions \
+            --header "Authorization: Bearer $OR_FOR_CI_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data-binary @-)
+
+    # Check if curl command itself failed
+    if [ $? -ne 0 ]; then
+        echo "Error: curl command failed for model $current_model." >&2
+        continue
+    fi
+
+    # Check if the response is empty
+    if [ -z "$response" ]; then
+        echo "Error: Empty response from API for model $current_model." >&2
+        continue
+    fi
+
+    # Attempt to parse the summary
+    summary=$(echo "$response" | jq -r '.choices[0].message.content')
+
+    # Check if jq failed or the extracted summary is null/empty
+    if [ $? -eq 0 ] && [ -n "$summary" ] && [ "$summary" != "null" ]; then
+        echo "$summary" # Output the successfully extracted summary
+        return 0
+    else
+        echo "Failed to generate or parse summary with model $current_model:" >&2
+        echo "$response" >&2
+        continue
+    fi
+  done
+
+  echo "Error: All models failed to generate a summary." >&2
+  exit 1
+}
+
+# Call the function to get the summary
+get_summary_ai "$start_hash" "$end_hash"
