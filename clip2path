@@ -4,9 +4,24 @@ set -e
 if [ -n "$WAYLAND_DISPLAY" ]; then
     types=$(wl-paste --list-types)
     if grep -q '^image/' <<<"$types"; then
-        ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
+        # 优先选择常见格式，避免选择 tiff
+        if grep -q 'image/png' <<<"$types"; then
+            ext="png"
+            mime_type="image/png"
+        elif grep -q 'image/jpeg' <<<"$types"; then
+            ext="jpg"
+            mime_type="image/jpeg"
+        elif grep -q 'image/webp' <<<"$types"; then
+            ext="webp"
+            mime_type="image/webp"
+        else
+            # 如果没有常见格式，用第一个可用的
+            ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
+            mime_type=$(grep -m1 '^image/' <<<"$types")
+        fi
+
         file="/tmp/clip_$(date +%s).${ext}"
-        wl-paste > "$file"
+        wl-paste --type="$mime_type" > "$file"
         printf '%q' "$file" | kitty @ send-text --stdin
     else
         wl-paste --no-newline | kitty @ send-text --stdin
@@ -14,9 +29,23 @@ if [ -n "$WAYLAND_DISPLAY" ]; then
 elif [ -n "$DISPLAY" ]; then
     types=$(xclip -selection clipboard -t TARGETS -o)
     if grep -q '^image/' <<<"$types"; then
-        ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
+        # 优先选择常见格式
+        if grep -q 'image/png' <<<"$types"; then
+            ext="png"
+            mime_type="image/png"
+        elif grep -q 'image/jpeg' <<<"$types"; then
+            ext="jpg"
+            mime_type="image/jpeg"
+        elif grep -q 'image/webp' <<<"$types"; then
+            ext="webp"
+            mime_type="image/webp"
+        else
+            ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
+            mime_type=$(grep -m1 '^image/' <<<"$types")
+        fi
+
         file="/tmp/clip_$(date +%s).${ext}"
-        xclip -selection clipboard -t "image/${ext}" -o > "$file"
+        xclip -selection clipboard -t "$mime_type" -o > "$file"
         printf '%q' "$file" | kitty @ send-text --stdin
     else
         xclip -selection clipboard -o | kitty @ send-text --stdin
