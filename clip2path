@@ -1,66 +1,24 @@
 #!/usr/bin/env bash
 set -e
 
-# 调试信息 - 输出到日志文件
-LOG_FILE="/tmp/clip2path.log"
-echo "$(date): Script started" >> "$LOG_FILE"
-echo "DISPLAY: $DISPLAY" >> "$LOG_FILE"
-echo "WAYLAND_DISPLAY: $WAYLAND_DISPLAY" >> "$LOG_FILE"
-
-# 检测显示服务器类型
 if [ -n "$WAYLAND_DISPLAY" ]; then
-    echo "Using Wayland" >> "$LOG_FILE"
-    # Wayland 环境
-    if ! command -v wl-paste &> /dev/null; then
-        echo "Error: wl-paste not found" >> "$LOG_FILE"
-        exit 1
-    fi
-
-    types=$(wl-paste --list-types 2>>"$LOG_FILE")
-    echo "Available types: $types" >> "$LOG_FILE"
-
-    if grep -q '^text/' <<<"$types"; then
-        echo "Processing as text" >> "$LOG_FILE"
-        wl-paste --no-newline | kitty @ send-text --stdin
-    elif grep -q '^image/' <<<"$types"; then
-        echo "Processing as image" >> "$LOG_FILE"
+    types=$(wl-paste --list-types)
+    if grep -q '^image/' <<<"$types"; then
         ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
         file="/tmp/clip_$(date +%s).${ext}"
         wl-paste > "$file"
-        echo "Image saved to: $file" >> "$LOG_FILE"
         printf '%q' "$file" | kitty @ send-text --stdin
     else
-        echo "Processing as fallback text" >> "$LOG_FILE"
         wl-paste --no-newline | kitty @ send-text --stdin
     fi
 elif [ -n "$DISPLAY" ]; then
-    echo "Using X11" >> "$LOG_FILE"
-    # X11 环境
-    if ! command -v xclip &> /dev/null; then
-        echo "Error: xclip not found" >> "$LOG_FILE"
-        exit 1
-    fi
-
-    types=$(xclip -selection clipboard -t TARGETS -o 2>>"$LOG_FILE")
-    echo "Available types: $types" >> "$LOG_FILE"
-
-    if grep -q '^text/' <<<"$types"; then
-        echo "Processing as text" >> "$LOG_FILE"
-        xclip -selection clipboard -o | kitty @ send-text --stdin
-    elif grep -q '^image/' <<<"$types"; then
-        echo "Processing as image" >> "$LOG_FILE"
+    types=$(xclip -selection clipboard -t TARGETS -o)
+    if grep -q '^image/' <<<"$types"; then
         ext=$(grep -m1 '^image/' <<<"$types" | cut -d/ -f2 | cut -d';' -f1)
         file="/tmp/clip_$(date +%s).${ext}"
         xclip -selection clipboard -t "image/${ext}" -o > "$file"
-        echo "Image saved to: $file" >> "$LOG_FILE"
         printf '%q' "$file" | kitty @ send-text --stdin
     else
-        echo "Processing as fallback text" >> "$LOG_FILE"
         xclip -selection clipboard -o | kitty @ send-text --stdin
     fi
-else
-    echo "Error: No display server detected" >> "$LOG_FILE"
-    exit 1
 fi
-
-echo "$(date): Script completed" >> "$LOG_FILE"
