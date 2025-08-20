@@ -14,10 +14,10 @@ This directory contains comprehensive tests for the `g` (search) and `s` (replac
 ```bash
 # Run main test suite
 cd ~/bin/tests
-./test_gs_tools
+bash ./test_gs_tools
 
 # Run safety tests
-./safety_test
+bash ./safety_test
 ```
 
 ## Test Coverage
@@ -29,8 +29,11 @@ cd ~/bin/tests
 3. **Regex Replacement** - Word boundaries and complex patterns
 4. **Capture Groups** - Backreferences in replacements
 5. **Dry-run Mode** - Preview changes without modification
-6. **Error Handling** - Empty patterns, invalid directories
-7. **Exit Codes** - Proper return values for success/failure
+6. **Delete Functionality** - Text deletion using empty replacement strings
+7. **Delete Dry-run** - Preview delete operations without modification
+8. **Complex Delete Patterns** - Advanced deletion scenarios (comments, URLs, etc.)
+9. **Error Handling** - Empty patterns, invalid directories
+10. **Exit Codes** - Proper return values for success/failure
 
 ### Safety Tests (`safety_test`)
 

@@ -26,6 +26,15 @@ show_usage() {
     echo "  # Convert var to const with word boundaries"
     echo "  s '\\bvar\\b' 'const' src/"
     echo ""
+    echo "  # Delete console.log statements (empty replacement = delete)"
+    echo "  s 'console\\.log\\(.*?\\);?' '' src/"
+    echo ""
+    echo "  # Remove trailing whitespace"
+    echo "  s '\\s+\$' '' ."
+    echo ""
+    echo "  # Delete comment blocks"
+    echo "  s '/\\*.*?\\*/' '' src/"
+    echo ""
     echo "  # Reformat dates from YYYY-MM-DD to DD/MM/YYYY"
     echo "  s '(\\d{4})-(\\d{2})-(\\d{2})' '\$3/\$2/\$1' data/"
     echo ""
@@ -85,10 +94,6 @@ validate_inputs() {
         exit 1
     fi
 
-    if [[ -z "$REPLACEMENT" ]]; then
-        echo "Error: Replacement cannot be empty" >&2
-        exit 1
-    fi
 
     if [[ ! -d "$TARGET" && ! -f "$TARGET" ]]; then
         echo "Error: File or directory.*does not exist" >&2
@@ -131,7 +136,7 @@ do_replace() {
                 local preview_content
                 preview_content=$(rg_get_preview "$PATTERN" "$REPLACEMENT" "$file" "${EXTRA_RG_OPTS[@]}")
                 local rg_exit=$?
-                
+
                 # Check if there would be changes
                 if [[ $rg_exit -eq 0 ]] || [[ $rg_exit -eq 1 ]]; then
                     if ! diff -q "$file" <(echo "$preview_content") >/dev/null 2>&1; then
