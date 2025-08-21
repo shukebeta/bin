@@ -1,0 +1,254 @@
+#!/bin/bash
+
+# Path management script for maintaining PATH environment variable
+# Usage: path add|remove <path>
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the library functions
+source "$SCRIPT_DIR/path_lib.sh"
+
+# Function to safely exit or return based on how script was called
+safe_exit() {
+    local exit_code=${1:-0}
+    # Check if script is being sourced
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+        # Script is being sourced, use return
+        return $exit_code
+    else
+        # Script is being executed, use exit
+        exit $exit_code
+    fi
+}
+
+# Function to add a path
+add_path() {
+    local new_path="$1"
+    local normalized_path=$(normalize_path "$new_path")
+    
+    # Check if the path actually exists
+    if ! dir_exists "$normalized_path"; then
+        echo "Error: Directory '$normalized_path' does not exist"
+        local expanded_path=$(expand_tilde "$normalized_path")
+        echo "Expanded path: '$expanded_path'"
+        echo "Please create the directory first or check the path spelling"
+        return 1
+    fi
+    
+    # Check if path already exists in current PATH
+    if is_path_in_current_path "$normalized_path"; then
+        echo "Path '$normalized_path' is already in PATH"
+        return 0
+    fi
+    
+    # Check if path is already in custom paths
+    if is_path_in_custom_paths "$normalized_path"; then
+        echo "Path '$normalized_path' is already in custom paths"
+        return 0
+    fi
+    
+    # Read current custom paths
+    local current_paths=$(read_custom_paths)
+    
+    # Add new path to the list (always quoted to handle spaces)
+    if [ -n "$current_paths" ]; then
+        current_paths="$current_paths \"$normalized_path\""
+    else
+        current_paths="\"$normalized_path\""
+    fi
+    
+    # Write updated paths to .bashrc
+    write_custom_paths "$current_paths"
+    
+    # Clean up old backups after successful operation
+    cleanup_old_backups
+    
+    # Update current session's PATH (use original PATH if available)
+    if [ -n "$ORIGINAL_PATH" ]; then
+        export PATH="$ORIGINAL_PATH:$normalized_path"
+    else
+        export PATH="$PATH:$normalized_path"
+    fi
+    
+    echo "Added '$normalized_path' to PATH"
+    
+    # Check if we're being sourced or executed
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+        # Script is being executed, not sourced - PATH change won't persist to parent shell
+        echo "⚠️  Current session PATH not updated (script running in subshell)"
+        echo "Run one of these commands to update your current session:"
+        echo "   export PATH=\"$PATH\""
+        echo "   source ~/.bashrc"
+        echo ""
+        echo "Or use: source $0 add '$new_path' (to update current session directly)"
+    else
+        # Script is being sourced - PATH change will persist
+        echo "✅ Current session PATH updated successfully"
+        echo "Changes will persist. Run 'source ~/.bashrc' in new shells to load saved configuration."
+    fi
+}
+
+# Function to remove a path
+remove_path() {
+    local target_path="$1"
+    local normalized_path=$(normalize_path "$target_path")
+    
+    # Read current custom paths
+    local current_paths=$(read_custom_paths)
+    
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths found in .bashrc"
+        return 1
+    fi
+    
+    # Remove the target path from the list (handle quoted paths properly)
+    local updated_paths=$(echo "$current_paths" | sed "s|\"$normalized_path\"||g" | sed 's/  \+/ /g' | sed 's/^ *//;s/ *$//')
+    
+    # Check if anything was actually removed
+    if [ "$current_paths" = "$updated_paths" ]; then
+        echo "Path '$normalized_path' not found in custom paths"
+        return 1
+    fi
+    
+    # Write updated paths to .bashrc
+    write_custom_paths "$updated_paths"
+    
+    # Clean up old backups after successful operation
+    cleanup_old_backups
+    
+    echo "Removed '$normalized_path' from custom paths"
+    echo "Run 'source ~/.bashrc' or start a new shell to update PATH."
+}
+
+# Function to list custom paths
+list_paths() {
+    local current_paths=$(read_custom_paths)
+    
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths configured"
+    else
+        echo "Custom paths:"
+        # Parse quoted paths properly and display them
+        echo "$current_paths" | grep -o '"[^"]*"' | sed 's/"//g' | nl -w2 -s'. '
+    fi
+}
+
+# Function to clean up non-existent paths
+clean_paths() {
+    local current_paths=$(read_custom_paths)
+    
+    if [ -z "$current_paths" ]; then
+        echo "No custom paths to clean"
+        return 0
+    fi
+    
+    echo "Checking custom paths for existence..."
+    
+    local valid_paths=""
+    local removed_count=0
+    
+    # Parse each quoted path and check if it exists
+    while IFS= read -r path; do
+        if [ -n "$path" ]; then
+            # Remove quotes
+            local clean_path=$(echo "$path" | sed 's/"//g')
+            
+            if dir_exists "$clean_path"; then
+                # Path exists, keep it
+                if [ -n "$valid_paths" ]; then
+                    valid_paths="$valid_paths \"$clean_path\""
+                else
+                    valid_paths="\"$clean_path\""
+                fi
+                echo "✓ Keeping: $clean_path"
+            else
+                # Path doesn't exist, remove it
+                echo "✗ Removing: $clean_path (directory not found)"
+                ((removed_count++))
+            fi
+        fi
+    done < <(echo "$current_paths" | grep -o '"[^"]*"')
+    
+    if [ $removed_count -eq 0 ]; then
+        echo "All custom paths are valid - no cleanup needed"
+        return 0
+    fi
+    
+    # Update .bashrc with cleaned paths
+    write_custom_paths "$valid_paths"
+    
+    echo ""
+    echo "Cleanup completed: removed $removed_count invalid path(s)"
+    echo "Run 'source ~/.bashrc' or start a new shell to update PATH."
+    
+    # Clean up old backups after successful operation
+    cleanup_old_backups
+}
+
+# Main script logic
+case "$1" in
+    "add")
+        if [ -z "$2" ]; then
+            echo "Usage: path add <path>"
+            safe_exit 1
+        fi
+        add_path "$2"
+        ;;
+    "remove")
+        if [ -z "$2" ]; then
+            echo "Usage: path remove <path>"
+            safe_exit 1
+        fi
+        remove_path "$2"
+        ;;
+    "list")
+        list_paths
+        ;;
+    "init")
+        init_original_path
+        ;;
+    "clean")
+        clean_paths
+        ;;
+    "backup")
+        backup_bashrc
+        ;;
+    "restore")
+        if [ -n "$2" ]; then
+            restore_bashrc "$2"
+        else
+            restore_bashrc
+        fi
+        ;;
+    "backups")
+        list_backups
+        ;;
+    *)
+        echo "Usage: path {add|remove|list|init|clean|backup|restore|backups} [path]"
+        echo ""
+        echo "Commands:"
+        echo "  add <path>     Add a path to PATH environment variable"
+        echo "  remove <path>  Remove a path from custom PATH entries"
+        echo "  list           Show all custom paths"
+        echo "  init           Store current PATH as the original baseline"
+        echo "  clean          Remove non-existent directories from custom paths"
+        echo "  backup         Create a manual backup of .bashrc"
+        echo "  restore [file] Restore .bashrc from backup (latest if no file specified)"
+        echo "  backups        List all available .bashrc backups"
+        echo ""
+        echo "Note: To update your current session's PATH immediately, use:"
+        echo "  source path add <path>    (instead of ./path add <path>)"
+        echo "  source path remove <path> (instead of ./path remove <path>)"
+        echo ""
+        echo "Examples:"
+        echo "  path add /usr/local/myapp/bin"
+        echo "  path add ~/bin"
+        echo "  path clean    # Remove non-existent directories"
+        echo "  path list"
+        echo "  path backup   # Create manual backup"
+        echo "  path backups  # List all backups"
+        echo "  path restore  # Restore from latest backup"
+        safe_exit 1
+        ;;
+esac

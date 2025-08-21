@@ -5,7 +5,13 @@ if [ "$1" == "--cached" ]; then
   git_diff="git diff -w -b --cached"
   commit_command="git commit -m"
 else
-  git_diff="git diff -w -b HEAD"
+  # Check if HEAD exists (not a new repo)
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    git_diff="git diff -w -b HEAD"
+  else
+    # New repo - show all tracked files as diff
+    git_diff="git diff -w -b --cached"
+  fi
   commit_command="git commit -am"
 fi
 
@@ -27,7 +33,7 @@ END
 )
 
 # Define model and system message variables
-models=("meta-llama/llama-4-maverick:free" "meta-llama/llama-4-scout:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
+models=("mistralai/devstral-small-2505:free" "deepseek/deepseek-r1-0528-qwen3-8b:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
 system_message="You are a programmer"
 
 get_commit_message_ai() {
