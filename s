@@ -85,9 +85,13 @@ validate_inputs() {
         exit 1
     fi
 
+    if [[ -z "$REPLACEMENT" ]]; then
+        echo "Error: Replacement cannot be empty" >&2
+        exit 1
+    fi
 
     if [[ ! -d "$TARGET" && ! -f "$TARGET" ]]; then
-        echo "Error: File or directory '$TARGET' does not exist" >&2
+        echo "Error: File or directory.*does not exist" >&2
         exit 1
     fi
 }
