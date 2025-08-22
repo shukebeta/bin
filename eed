@@ -55,10 +55,10 @@ fi
 FILE="$1"
 shift
 
-# Check if file exists
+# Check if file exists, create if needed
 if [ ! -f "$FILE" ]; then
-    echo "Error: File '$FILE' does not exist" >&2
-    exit 1
+    echo "Creating new file: $FILE"
+    touch "$FILE"
 fi
 
 # Create backup

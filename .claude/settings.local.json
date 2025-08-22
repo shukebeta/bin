@@ -7,9 +7,14 @@
       "Bash(tests/test_eed_comprehensive.sh:*)",
       "Bash(eed:*)",
       "Bash(rm:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(touch:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\c\\Users\\David.Wei\\davidwei\\docs\\development\\claude"
+    ]
   }
 }
