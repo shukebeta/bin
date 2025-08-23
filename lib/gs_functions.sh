@@ -126,16 +126,8 @@ rg_get_preview() {
     shift 3
     local extra_opts=("$@")
 
-    # Escape literal dollar signs for ripgrep, but preserve capture groups
-    # Replace $ with $$ only if not followed by a digit (capture group)
-    local escaped_replacement="$replacement"
-    # Use perl-style regex to replace $ not followed by digit with $$
-    escaped_replacement=$(echo "$escaped_replacement" | sed 's/\$\([^0-9]\)/$$\1/g')
-    # Handle $ at end of string
-    escaped_replacement=$(echo "$escaped_replacement" | sed 's/\$$/$$/g')
-
     # Use the same --passthru mechanism as safe_replace_file for consistency
-    local replace_opts=("--replace" "${escaped_replacement}" "--passthru" "--color=never")
+    local replace_opts=("--replace" "$replacement" "--passthru" "--color=never")
     rg "${extra_opts[@]}" "${replace_opts[@]}" "$pattern" "$file" 2>/dev/null
 }
 
@@ -150,16 +142,8 @@ safe_replace_file() {
     # Create backup
     cp "$file" "$file.bak"
 
-    # Escape literal dollar signs for ripgrep, but preserve capture groups
-    # Replace $ with $$ only if not followed by a digit (capture group)
-    local escaped_replacement="$replacement"
-    # Use perl-style regex to replace $ not followed by digit with $$
-    escaped_replacement=$(echo "$escaped_replacement" | sed 's/\$\([^0-9]\)/$$\1/g')
-    # Handle $ at end of string
-    escaped_replacement=$(echo "$escaped_replacement" | sed 's/\$$/$$/g')
-
     # Perform replacement
-    local replace_opts=("--replace" "$escaped_replacement" "--passthru" "--color=never")
+    local replace_opts=("--replace" "$replacement" "--passthru" "--color=never")
     rg "${extra_opts[@]}" "${replace_opts[@]}" "$pattern" "$file" > "$file.tmp" 2>/dev/null
     local rg_exit=$?
 

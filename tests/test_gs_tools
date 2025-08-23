@@ -193,37 +193,6 @@ test_replace_capture_groups() {
     echo "$original_dates" > dates.txt
 }
 
-# Test dollar sign handling
-test_dollar_sign_handling() {
-    print_status "INFO" "Testing dollar sign handling in replacements..."
-
-    # Create test file with simple content
-    echo "replace this text" > dollar_test.txt
-
-    # Test replacement with literal dollar sign
-    "$SCRIPT_DIR/s" "this" '$VAR' dollar_test.txt >/dev/null 2>&1
-
-    local result_content
-    result_content=$(cat dollar_test.txt)
-
-    assert_equal "replace \$VAR text" "$result_content" "Dollar sign literal replacement works"
-
-    # Test dry-run with dollar sign
-    echo "another test line" > dollar_test2.txt
-    local dry_output
-    dry_output=$("$SCRIPT_DIR/s" "test" '$HOME/path' dollar_test2.txt --dry-run 2>/dev/null)
-
-    if echo "$dry_output" | grep -q '\$HOME/path'; then
-        print_status "PASS" "Dollar sign in dry-run preview works"
-        ((PASSED_TESTS++))
-    else
-        print_status "FAIL" "Dollar sign in dry-run preview failed"
-        echo "Output: $dry_output"
-        ((FAILED_TESTS++))
-    fi
-    ((TOTAL_TESTS++))
-}
-
 # Test dry-run functionality
 test_dry_run() {
     print_status "INFO" "Testing dry-run functionality..."
@@ -326,7 +295,6 @@ main() {
     test_replace_basic
     test_replace_regex
     test_replace_capture_groups
-    test_dollar_sign_handling
     test_dry_run
     test_error_handling
     test_exit_codes
