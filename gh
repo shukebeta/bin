@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Path to original gh binary
+ORIGINAL_GH="/c/Program Files/GitHub CLI/gh"
+
+# Get current repository's remote URL
+remote_url=$(git remote get-url origin 2>/dev/null)
+
+# If not in a git repo, pass through to original gh
+if [ $? -ne 0 ]; then
+    exec "$ORIGINAL_GH" "$@"
+fi
+
+# Extract full repository name (owner/repo) - remove .git suffix
+if [[ $remote_url =~ github\.com[:/]([^/]+/[^/]+) ]]; then
+    repo_full_name="${BASH_REMATCH[1]}"
+    repo_full_name="${repo_full_name%.git}"
+    repo_owner=$(echo "$repo_full_name" | cut -d'/' -f1)
+else
+    exec "$ORIGINAL_GH" "$@"
+fi
+
+# Get current active GitHub account
+current_user=$("$ORIGINAL_GH" api user --jq '.login' 2>/dev/null)
+
+if [ $? -ne 0 ]; then
+    exec "$ORIGINAL_GH" "$@"
+fi
+
+# Switch account if needed
+if [ "$repo_owner" != "$current_user" ]; then
+    echo "→ Repository belongs to $repo_owner, switching from $current_user..." >&2
+    "$ORIGINAL_GH" auth switch >/dev/null 2>&1
+fi
+
+# Set default repository
+"$ORIGINAL_GH" repo set-default "$repo_full_name" >/dev/null 2>&1
+
+# Execute original command
+exec "$ORIGINAL_GH" "$@"
