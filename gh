@@ -30,11 +30,23 @@ fi
 # Switch account if needed
 if [ "$repo_owner" != "$current_user" ]; then
     echo "→ Repository belongs to $repo_owner, switching from $current_user..." >&2
-    "$ORIGINAL_GH" auth switch >/dev/null 2>&1
+    # try to switch directly to the account matching the repo owner; don't fail the script if it doesn't succeed
+    "$ORIGINAL_GH" auth switch "$repo_owner" >/dev/null 2>&1 || true
+
+    # wait briefly for gh to refresh auth context (up to 5 seconds)
+    tries=0
+    until "$ORIGINAL_GH" api user --jq '.login' >/dev/null 2>&1 || [ "$tries" -ge 5 ]; do
+        sleep 1
+        tries=$((tries+1))
+    done
 fi
 
-# Set default repository
-"$ORIGINAL_GH" repo set-default "$repo_full_name" >/dev/null 2>&1
+# Only set default if repo is accessible with current auth
+if "$ORIGINAL_GH" repo view "$repo_full_name" >/dev/null 2>&1; then
+    "$ORIGINAL_GH" repo set-default "$repo_full_name" >/dev/null 2>&1
+else
+    echo "→ Warning: $repo_full_name not accessible with current auth, skipping repo set-default" >&2
+fi
 
 # Execute original command
 exec "$ORIGINAL_GH" "$@"
