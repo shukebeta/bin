@@ -1,0 +1,121 @@
+#!/bin/bash
+
+# Source common git functions
+source "$(dirname "$0")/git-common.sh"
+
+# Check for uncommitted changes first
+check_uncommitted_changes
+
+# Function to show usage
+show_usage() {
+    echo "Usage: fm [branch_selector]"
+    echo ""
+    echo "Automatically fetch and merge from origin/integration, origin/main, or origin/master"
+    echo "If multiple branches exist, specify with:"
+    echo "  i - for integration"
+    echo "  m - for main" 
+    echo "  ma - for master"
+    echo ""
+    echo "Examples:"
+    echo "  fm          # Auto-detect and merge if only one branch exists"
+    echo "  fm i        # Force merge from origin/integration"
+    echo "  fm m        # Force merge from origin/main"
+    echo "  fm ma       # Force merge from origin/master"
+    exit 1
+}
+
+# Check if we're in a git repository
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    echo "Error: Current directory is not a git repository."
+    exit 1
+fi
+
+# Function to fetch and merge from specified branch
+fetch_and_merge() {
+    local branch="$1"
+    echo "Fetching and merging from origin/$branch..."
+    if git fetch && git merge "origin/$branch"; then
+        echo "Successfully merged from origin/$branch"
+    else
+        echo "Failed to fetch and merge from origin/$branch"
+        exit 1
+    fi
+}
+
+# Check available branches
+available_branches=()
+preferred_branches=("integration" "main" "master")
+
+echo "Fetching latest changes..."
+git fetch
+
+for branch in "${preferred_branches[@]}"; do
+    if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        available_branches+=("$branch")
+    fi
+done
+
+# Handle the case when no preferred branches are found
+if [ ${#available_branches[@]} -eq 0 ]; then
+    echo "Error: No preferred branches (origin/integration, origin/main, origin/master) found."
+    exit 1
+fi
+
+# If parameter provided, validate and use it
+if [ -n "$1" ]; then
+    case "$1" in
+        "i")
+            if [[ " ${available_branches[*]} " =~ " integration " ]]; then
+                fetch_and_merge "integration"
+            else
+                echo "Error: origin/integration branch not found."
+                exit 1
+            fi
+            ;;
+        "m")
+            if [[ " ${available_branches[*]} " =~ " main " ]]; then
+                fetch_and_merge "main"
+            else
+                echo "Error: origin/main branch not found."
+                exit 1
+            fi
+            ;;
+        "ma")
+            if [[ " ${available_branches[*]} " =~ " master " ]]; then
+                fetch_and_merge "master"
+            else
+                echo "Error: origin/master branch not found."
+                exit 1
+            fi
+            ;;
+        "-h"|"--help"|"help")
+            show_usage
+            ;;
+        *)
+            echo "Error: Invalid parameter '$1'"
+            show_usage
+            ;;
+    esac
+    exit 0
+fi
+
+# Auto-detection logic when no parameter provided
+if [ ${#available_branches[@]} -eq 1 ]; then
+    # Only one branch available - auto merge
+    echo "Found single branch: origin/${available_branches[0]}"
+    fetch_and_merge "${available_branches[0]}"
+else
+    # Multiple branches available - ask for selection
+    echo "Multiple branches found:"
+    for branch in "${available_branches[@]}"; do
+        case "$branch" in
+            "integration") echo "  i  - origin/integration" ;;
+            "main")        echo "  m  - origin/main" ;;
+            "master")      echo "  ma - origin/master" ;;
+        esac
+    done
+    echo ""
+    echo "Please specify which branch to merge from:"
+    echo "Usage: fm [i|m|ma]"
+    exit 1
+fi
