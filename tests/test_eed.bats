@@ -7,18 +7,32 @@
 # - Basic functionality (insert, delete, replace)
 # - Special character handling (quotes, dollar signs)
 # - Windows path compatibility
-# - Error handling and backup/restore
+# - Error handling and preview/restore
 # - Complex multi-command operations
 # - Security validation (command injection prevention)
 
 setup() {
-    # Create unique test directory for this test run
+    # Determine repository root before changing to a temporary working directory.
+    # Prefer BATS_TEST_DIRNAME (set by bats). If not present, fall back to script heuristics.
+    if [ -n "${BATS_TEST_DIRNAME:-}" ]; then
+        REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+    else
+        # Fallback: derive from this test file's location
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    fi
+
+    # Create unique test directory for this test run and switch into it
     TEST_DIR="$(mktemp -d)"
     cd "$TEST_DIR"
 
-    # Ensure we're using the local eed from bin/
-    export PATH="/home/davidwei/Projects/pkb/bin:$PATH"
-    
+    # Use the repository eed executable directly (ensures libs resolve correctly)
+    SCRIPT_UNDER_TEST="$REPO_ROOT/eed"
+    chmod +x "$SCRIPT_UNDER_TEST" 2>/dev/null || truet st -s
+
+    # Expose repo root on PATH for helper tools
+    export PATH="$REPO_ROOT:$PATH"
+
     # Prevent logging during tests
     export EED_TESTING=1
 }
@@ -38,7 +52,7 @@ line4
 line5
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test1.txt "3a
+    run $SCRIPT_UNDER_TEST --force test1.txt "3a
 inserted_line
 .
 w
@@ -57,7 +71,7 @@ line4
 line5
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test1.txt "2d
+    run $SCRIPT_UNDER_TEST --force test1.txt "2d
 w
 q"
     [ "$status" -eq 0 ]
@@ -74,7 +88,7 @@ line4
 line5
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test1.txt "1,\$s/line1/replaced_line1/
+    run $SCRIPT_UNDER_TEST --force test1.txt "1,\$s/line1/replaced_line1/
 w
 q"
     [ "$status" -eq 0 ]
@@ -87,7 +101,7 @@ q"
 normal line
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test2.txt "1a
+    run $SCRIPT_UNDER_TEST --force test2.txt "1a
 line with 'single quotes'
 .
 w
@@ -102,7 +116,7 @@ q"
 normal line
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test2.txt "$(cat <<'EOF'
+    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
 1a
 line with "double quotes"
 .
@@ -120,7 +134,7 @@ EOF
 normal line
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test2.txt "$(cat <<'EOF'
+    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
 1a
 line with \backslash
 .
@@ -138,7 +152,7 @@ EOF
 normal line
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test2.txt "$(cat <<'EOF'
+    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
 1a
 line with $dollar sign
 .
@@ -156,7 +170,7 @@ EOF
 old_path=/usr/local/bin
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test3.txt "s|old_path=.*|new_path=C:\\Users\\Test\$User\\Documents|
+    run $SCRIPT_UNDER_TEST --force test3.txt "s|old_path=.*|new_path=C:\\Users\\Test\$User\\Documents|
 w
 q"
     [ "$status" -eq 0 ]
@@ -170,7 +184,7 @@ original content
 EOF
 
     # Invalid command should be detected and rejected before execution
-    run /home/davidwei/Projects/pkb/bin/eed --force test4.txt "invalid_command"
+    run $SCRIPT_UNDER_TEST --force test4.txt "invalid_command"
     [ "$status" -ne 0 ]
 
     # Original content should be preserved (file never modified)
@@ -186,7 +200,7 @@ function newName() {
 }
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test5.txt "1,\$s/.*console\.log.*;//
+    run $SCRIPT_UNDER_TEST --force test5.txt "1,\$s/.*console\.log.*;//
 w
 q"
     [ "$status" -eq 0 ]
@@ -201,7 +215,7 @@ function newName() {
 }
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test5.txt "2a
+    run $SCRIPT_UNDER_TEST --force test5.txt "2a
     // Added comment
 .
 w
@@ -217,7 +231,7 @@ safe content
 EOF
 
     # Attempt command injection - should be treated as literal text
-    run /home/davidwei/Projects/pkb/bin/eed --force test6.txt "1a
+    run $SCRIPT_UNDER_TEST --force test6.txt "1a
 ; rm -rf /tmp; echo malicious
 .
 w
@@ -234,7 +248,7 @@ q"
 safe content
 EOF
 
-    run /home/davidwei/Projects/pkb/bin/eed --force test6.txt "1a
+    run $SCRIPT_UNDER_TEST --force test6.txt "1a
 line with | & ; < > characters
 .
 w
@@ -246,7 +260,7 @@ q"
 
 @test "file creation for non-existent file" {
     # Test that eed can create new files
-    run /home/davidwei/Projects/pkb/bin/eed --force newfile.txt "1i
+    run $SCRIPT_UNDER_TEST --force newfile.txt "1i
 first line
 .
 w

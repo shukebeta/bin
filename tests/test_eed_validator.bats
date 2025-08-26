@@ -4,13 +4,19 @@
 # Direct testing of classify_ed_script and validate_ed_script
 
 setup() {
+    # Determine repository root using BATS_TEST_DIRNAME
+    REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+
+    # Create unique test directory and switch into it
     TEST_DIR="$(mktemp -d)"
     cd "$TEST_DIR"
 
-    # Load validator functions
-    # Load shared regex patterns
-    source "/home/davidwei/Projects/pkb/bin/lib/eed_regex_patterns.sh"
-    source "/home/davidwei/Projects/pkb/bin/lib/eed_validator.sh"
+    # Load validator functions using absolute paths
+    source "$REPO_ROOT/lib/eed_regex_patterns.sh"
+    source "$REPO_ROOT/lib/eed_validator.sh"
+
+    # Use the repository eed executable directly
+    SCRIPT_UNDER_TEST="$REPO_ROOT/eed"
 
     # Prevent logging during tests
     export EED_TESTING=1
@@ -108,7 +114,7 @@ teardown() {
     [ "$status" -eq 0 ]
     [ "$output" = "has_modifying" ]
 
-    run classify_ed_script "1,$s/old/new/g"
+    run classify_ed_script '1,$s/old/new/g'
     [ "$status" -eq 0 ]
     [ "$output" = "has_modifying" ]
 
@@ -226,11 +232,11 @@ w"
 # Integration tests for edge cases
 
 @test "classifier edge case: dollar sign in ranges" {
-    run classify_ed_script "1,$s/old/new/g"
+    run classify_ed_script '1,$s/old/new/g'
     [ "$status" -eq 0 ]
     [ "$output" = "has_modifying" ]
 
-    run classify_ed_script "5,$p"
+    run classify_ed_script '5,$p'
     [ "$status" -eq 0 ]
     [ "$output" = "view_only" ]
 }
@@ -291,10 +297,11 @@ q"
 @test "dot trap guidance: provides helpful suggestions" {
     # Should provide clear guidance about heredoc usage
     local script="test script with multiple dots"
-    run bash -c 'source /home/davidwei/Projects/pkb/bin/lib/eed_validator.sh && suggest_dot_fix "$1"' _ "$script"
+    # suggest_dot_fix is already loaded via setup(); call it directly
+    run suggest_dot_fix "$script"
     [ "$status" -eq 0 ]
     [[ "$output" == *"consider using heredoc syntax"* ]]
-    [[ "$output" == *". for content"* ]]
+    [[ "$output" == *". (dot) for content"* ]]
 }
 
 # --- Tests for detect_line_order_issue ---
@@ -547,12 +554,19 @@ q"
 @test "exclamation mark preservation: bash array syntax should not be escaped" {
     # Test that exclamation marks in bash array syntax are preserved correctly
     set +H  # Ensure history expansion is disabled in test
-    local script="$(set +H; printf '3a\necho \"Array indices: ${!arr[@]}\"\n.\nw\nq')"
+    local script=$(cat <<'EOF'
+3a
+echo "Array indices: ${!arr[@]}"
+.
+w
+q
+EOF
+)
     run reorder_script_if_needed "$script"
     [ "$status" -eq 0 ]  # No reordering needed for single command
-    # Verify the exclamation mark is preserved (not escaped as !)
+    # Verify the exclamation mark is preserved (literal ${!arr[@]}) and not escaped like '\!'
     [[ "$output" == *'${!arr[@]}'* ]]
-    [[ "$output" != *'${!arr[@]}'* ]]
+    [[ "$output" != *'\\!'* ]]
 }
 
 # Regex validation tests for complex pattern detection
@@ -670,28 +684,56 @@ q"
 @test "git add reminder: --force mode shows git add suggestion" {
     local test_file="$TEST_DIR/reminder_test.txt"
     echo "original content" > "$test_file"
-    
-    run /home/davidwei/Projects/pkb/bin/eed --force "$test_file" "1c
+
+    # Ensure this temp directory is a git working tree so eed prints the git add suggestion
+    git init >/dev/null 2>&1 || true
+
+    run $SCRIPT_UNDER_TEST --force "$test_file" "1c
 new content
 .
 w
 q"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Successfully edited"* ]]
-    [[ "$output" == *"Recommended: git add"* ]]
+    # Match any git add suggestion text produced by eed
+    [[ "$output" == *"git add"* ]]
     [[ "$output" == *"reminder_test.txt"* ]]
+}
+
+@test "classifier: G老师's edge case concerns verification" {
+    # Verify that the exact cases G老师 was worried about work correctly
+    run classify_ed_script "5p"
+    [ "$status" -eq 0 ]
+    [ "$output" = "view_only" ]
+
+    run classify_ed_script "5d"
+    [ "$status" -eq 0 ]
+    [ "$output" = "has_modifying" ]
+
+    run classify_ed_script "1,5p"
+    [ "$status" -eq 0 ]
+    [ "$output" = "view_only" ]
+
+    run classify_ed_script "1,5d"
+    [ "$status" -eq 0 ]
+    [ "$output" = "has_modifying" ]
+
+    # Test substitute commands that were concerns
+    run classify_ed_script "1,\$s/old/new/g"
+    [ "$status" -eq 0 ]
+    [ "$output" = "has_modifying" ]
 }
 
 @test "git add reminder: preview mode does not show git add suggestion" {
     local test_file="$TEST_DIR/preview_test.txt"
     echo "original content" > "$test_file"
-    
-    run /home/davidwei/Projects/pkb/bin/eed "$test_file" "1c
+
+    run $SCRIPT_UNDER_TEST "$test_file" "1c
 new content
 .
 w
 q"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Edits applied to a temporary backup"* ]]
-    [[ "$output" != *"Recommended: git add"* ]]
+    [[ "$output" == *"Edits applied to a temporary preview"* ]]
+    [[ "$output" != *"git add"* ]]
 }

@@ -66,37 +66,35 @@ classify_ed_script() {
         fi
 
         # Check for modifying commands (append, change, insert)
-        if [[ "$line" =~ ^(\.|[0-9]+|\$)?,?(\.|[0-9]+|\$)?[aAcCiI]$ ]]; then
+        if is_input_command "$line"; then
             parsing_stack+=("INPUT")
             echo "has_modifying"
             return 0
         fi
 
         # Other modifying commands (delete, move, etc)
-        if [[ "$line" =~ ^(\.|[0-9]+|\$)?,?(\.|[0-9]+|\$)?[dDmMtTjJsSuU] ]]; then
+        if is_modifying_command "$line"; then
             echo "has_modifying"
             return 0
         fi
 
         # Substitute command: [range]s/pattern/replacement/[flags]
-        if [[ "$line" =~ ^(\.|[0-9]+|\$)?,?(\.|[0-9]+|\$)?s/.*/.*/ ]]; then
+        if is_substitute_command "$line"; then
             echo "has_modifying"
             return 0
         fi
 
-        if [[ "$line" =~ ^w ]]; then
+        if is_write_command "$line"; then
             echo "has_modifying"
             return 0
         fi
 
         # Check for valid view commands
-        if [[ "$line" =~ ^(\.|[0-9]+|\$)?,?(\.|[0-9]+|\$)?[pPnNlL=]$ ]] || \
-           [[ "$line" =~ ^[qQ]$ ]] || \
-           [[ "$line" =~ ^(\.|[0-9]+|\$)$ ]] || \
-           [[ "$line" =~ ^g/.*/[pPnNdDsS]?$ ]] || \
-           [[ "$line" =~ ^/[^/]*/[pPnNlL=]?$ ]] || \
-           [[ "$line" =~ ^/.*/([+-][0-9]+)?,/.*/([+-][0-9]+)?[pP]?$ ]] || \
-           [[ "$line" =~ ^\?.*\?[pP]?$ ]]; then
+        if is_view_command "$line" || \
+           is_quit_command "$line" || \
+           is_address_only "$line" || \
+           is_global_command "$line" || \
+           is_search_command "$line"; then
             continue  # Valid view command, keep checking
         else
             # Invalid command found
@@ -128,7 +126,7 @@ detect_dot_trap() {
         fi
 
         # Look for patterns suggesting heredoc usage attempt
-        if [[ "$line" =~ ^[0-9]*[aciACI]$ ]] || [[ "$line" =~ ^w$ ]] || [[ "$line" =~ ^q$ ]]; then
+        if [[ "$line" =~ ${EED_REGEX_INPUT_BASIC} ]] || [[ "$line" =~ ${EED_REGEX_WRITE_BASIC} ]] || [[ "$line" =~ ${EED_REGEX_QUIT_BASIC} ]]; then
             suspicious_pattern=true
         fi
     done <<< "$script"
@@ -191,13 +189,13 @@ detect_complex_patterns() {
         fi
 
         # Detect move/transfer/read commands
-        if [[ "$line" =~ ^[[:space:]]*[0-9]*,?[0-9]*[mMtTrR] ]]; then
+        if [[ "$line" =~ ${EED_REGEX_MOVE_TRANSFER} ]]; then
             echo "COMPLEX: Move/transfer/read command detected: $line" >&2
             return 1
         fi
 
         # Extract numeric addresses and check for overlaps
-        if [[ "$line" =~ ^([0-9]+)(,([0-9]+|\$))?([dDcCbBiIaAsS]) ]]; then
+        if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
             local start="${BASH_REMATCH[1]}"
             local end="${BASH_REMATCH[3]:-$start}"
             local cmd="${BASH_REMATCH[4]}"
@@ -259,7 +257,7 @@ reorder_script_if_needed() {
     # Step 1: Parse script and collect all lines and modifying commands
     while IFS= read -r line; do
         script_lines+=("$line")
-        if [[ "$line" =~ ^([0-9]+)(,([0-9]+|\$))?([dDcCbBiIaAsS]) ]]; then
+        if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
             modifying_commands+=("$line_index:${BASH_REMATCH[1]}:$line")
             modifying_line_numbers+=("${BASH_REMATCH[1]}")
         fi
@@ -361,7 +359,7 @@ detect_line_order_issue() {
 
     # Parse script to extract line numbers from modifying commands
     while IFS= read -r line; do
-        if [[ "$line" =~ ^([0-9]+)(,([0-9]+|\$))?([dDcCbBiIaAsS]) ]]; then
+        if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
             modifying_line_numbers+=("${BASH_REMATCH[1]}")
         fi
     done <<< "$script"

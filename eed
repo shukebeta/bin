@@ -28,6 +28,7 @@ source "$SCRIPT_DIR/lib/eed_validator.sh"
 DEBUG_MODE=false
 FORCE_MODE=false
 DISABLE_AUTO_REORDER=false
+FORGOT_STDIN_ARG_FLAG=false
 
 # Parse flags with proper argument handling
 while [ $# -gt 0 ]; do
@@ -56,29 +57,45 @@ while [ $# -gt 0 ]; do
 done
 
 # Enforce single parameter mode after parsing flags
-if [ $# -ne 2 ]; then
-    echo "Usage: eed [--debug] [--force] [--disable-auto-reorder] <file> <ed_script>" >&2
-    echo "" >&2
-    echo "Options:" >&2
-    echo "  --debug    Enable debug mode (preserve temp files, show ed output)" >&2
-    echo "  --force    Skip preview-confirm workflow, edit file directly" >&2
-    echo "  --disable-auto-reorder  Disable automatic script reordering" >&2
-    echo "" >&2
-    echo "Use a quoted heredoc to pass complex ed scripts without shell expansion." >&2
-    echo "Example (quoted heredoc prevents variable/backslash expansion):" >&2
-    echo "eed file.txt \"\$(cat <<'EOF_EXAMPLE'" >&2
-    echo "3c" >&2
-    echo "new content" >&2
-    echo "." >&2
-    echo "w" >&2
-    echo "q" >&2
-    echo "EOF_EXAMPLE" >&2
-    echo '")' >&2
+# Determine final FILE and ED_SCRIPT in a clear, ordered way:
+# 1) forgiving stdin mode: only FILE provided and stdin has data
+# 2) explicit two-argument mode: FILE and SCRIPT (or '-')
+# 3) otherwise: show usage and exit
+if [ $# -eq 1 ] && ! [ -t 0 ]; then
+    # Forgiving stdin mode: user likely piped instructions but forgot '-'
+    FORGOT_STDIN_ARG_FLAG=true
+    FILE="$1"
+    ED_SCRIPT=$(cat)
+    if [ -z "$ED_SCRIPT" ]; then
+        echo "Error: Empty script read from stdin" >&2
+        exit 1
+    fi
+elif [ $# -eq 2 ]; then
+    # Standard two-argument mode
+    FILE="$1"
+    ED_SCRIPT="$2"
+else
+    # Invalid usage
+    show_usage
     exit 1
 fi
 
-FILE="$1"
-ED_SCRIPT="$2"
+
+
+# Handle stdin script input
+if [ "$ED_SCRIPT" = "-" ]; then
+    echo "Note: Reading ed script from standard input..." >&2
+    if [ -t 0 ]; then
+        echo "Error: No input provided to stdin" >&2
+        exit 1
+    fi
+    ED_SCRIPT=$(cat)
+    if [ -z "$ED_SCRIPT" ]; then
+        echo "Error: Empty script read from stdin" >&2
+        exit 1
+    fi
+fi
+
 
 # --- Pre-processor Validation ---
 validation_result=$(validate_ed_script "$ED_SCRIPT")
@@ -166,9 +183,15 @@ if [ "$SCRIPT_TYPE" = "view_only" ]; then
     case $ED_EXIT_CODE in
         0)
             echo "✓ Successfully processed $FILE"
+            if [ "$FORGOT_STDIN_ARG_FLAG" = true ]; then
+                echo "💡 Tip: '-' was missing; I read from stdin this time."
+            fi
             ;;
         1)
             echo "✓ View operation completed (no matches found)"
+            if [ "$FORGOT_STDIN_ARG_FLAG" = true ]; then
+                echo "💡 Tip: '-' was missing; I read from stdin this time."
+            fi
             exit 0
             ;;
         2)
@@ -186,19 +209,19 @@ fi
 # 4. Handle modifying scripts with the new preview-confirm workflow
 if [ "$SCRIPT_TYPE" = "has_modifying" ]; then
     TARGET_FILE="$FILE"
-    BACKUP_FILE="$FILE.eed.bak"
+    PREVIEW_FILE="$FILE.eed.preview"
 
     # Decide on editing mode
     if [ "$FORCE_MODE" = true ]; then
-        echo "Note: --force mode enabled. Editing backup file, will apply directly." >&2
-        cp "$TARGET_FILE" "$BACKUP_FILE"
-        ED_TARGET="$BACKUP_FILE"  # Always edit backup file
+        echo "Note: --force mode enabled. Editing preview file, will apply directly." >&2
+        cp "$TARGET_FILE" "$PREVIEW_FILE"
+        ED_TARGET="$PREVIEW_FILE"  # Always edit preview file
         BACKUP_CREATED=true
     else
         # DEFAULT BEHAVIOR: Work on a copy, leave original untouched
-        cp "$TARGET_FILE" "$BACKUP_FILE"
-        ED_TARGET="$BACKUP_FILE" # ed will edit the backup file!
-        BACKUP_CREATED=false  # In preview mode, backup is the working copy
+        cp "$TARGET_FILE" "$PREVIEW_FILE"
+        ED_TARGET="$PREVIEW_FILE" # ed will edit the preview file\!
+        BACKUP_CREATED=false  # In preview mode, preview is the working copy
     fi
 
     # Create and prepare the temp command file
@@ -214,7 +237,7 @@ if [ "$SCRIPT_TYPE" = "has_modifying" ]; then
 
     printf '%s\n' "$ED_SCRIPT" > "$TEMP_CMD_FILE"
 
-    # Execute ed on the chosen target (original or backup)
+    # Execute ed on the chosen target (original or preview)
     if [ "$DEBUG_MODE" = true ]; then
         echo "Debug mode: executing ed with commands from $TEMP_CMD_FILE" >&2
         echo "Debug mode: ed command file contents:" >&2
@@ -232,30 +255,30 @@ if [ "$SCRIPT_TYPE" = "has_modifying" ]; then
         case $ED_EXIT_CODE in
             1)
                 if [ "$FORCE_MODE" = true ]; then
-                    echo "✗ Edit command failed, restoring backup" >&2
+                    echo "✗ Edit command failed, restoring preview" >&2
                     if [ "$BACKUP_CREATED" = true ]; then
-                        mv "$BACKUP_FILE" "$FILE"
+                        mv "$PREVIEW_FILE" "$FILE"
                     fi
                 else
                     echo "✗ Edit command failed" >&2
                     echo "  No changes were made to the original file." >&2
-                    rm -f "$BACKUP_FILE"
+                    rm -f "$PREVIEW_FILE"
                 fi
                 ;;
             2)
                 echo "✗ File I/O error" >&2
                 if [ "$FORCE_MODE" = true ] && [ "$BACKUP_CREATED" = true ]; then
-                    mv "$BACKUP_FILE" "$FILE"
+                    mv "$PREVIEW_FILE" "$FILE"
                 else
-                    rm -f "$BACKUP_FILE"
+                    rm -f "$PREVIEW_FILE"
                 fi
                 ;;
             3)
                 echo "✗ Internal ed error" >&2
                 if [ "$FORCE_MODE" = true ] && [ "$BACKUP_CREATED" = true ]; then
-                    mv "$BACKUP_FILE" "$FILE"
+                    mv "$PREVIEW_FILE" "$FILE"
                 else
-                    rm -f "$BACKUP_FILE"
+                    rm -f "$PREVIEW_FILE"
                 fi
                 ;;
         esac
@@ -266,23 +289,39 @@ if [ "$SCRIPT_TYPE" = "has_modifying" ]; then
 
     # --- Success Path ---
     if [ "$FORCE_MODE" = true ]; then
-        echo "✓ Successfully edited backup file."
-        echo "💡 Applying changes: mv '$BACKUP_FILE' '$FILE'"
-        mv "$BACKUP_FILE" "$FILE"
-        echo "💡 Recommended: git add '$FILE'"
+        echo "✓ Successfully edited preview file."
+        echo "💡 Applying changes: mv '$PREVIEW_FILE' '$FILE'"
+        mv "$PREVIEW_FILE" "$FILE"
+        # Friendly post-success tip if we auto-read stdin
+        if [ "$FORGOT_STDIN_ARG_FLAG" = true ]; then
+            echo "💡 Tip: '-' was missing; I read from stdin this time."
+        fi
+        # Check if inside a Git repository before giving the tip
+        if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+            echo "💡 Next, stage your changes: git add '$FILE'"
+        fi
     else
         # The "Preview and Confirm" magic happens here
-        echo "✓ Edits applied to a temporary backup. Review the changes below:"
+        echo "✓ Edits applied to a temporary preview. Review the changes below:"
         echo ""
-
-        # Generate and print the diff
-        diff -u --color=auto "$FILE" "$BACKUP_FILE" || true
+        # Generate and print intelligent diff
+        if command -v git >/dev/null 2>&1; then
+            git diff --no-index --color=auto "$FILE" "$PREVIEW_FILE" || true
+        elif command -v delta >/dev/null 2>&1; then
+            delta "$FILE" "$PREVIEW_FILE" || true
+        else
+            diff -u --color=auto "$FILE" "$PREVIEW_FILE" || true
+        fi
 
         echo ""
         echo "To apply these changes, run:"
-        echo "  mv '$BACKUP_FILE' '$FILE'"
+        echo "  mv '$PREVIEW_FILE' '$FILE'"
         echo ""
         echo "To discard these changes, run:"
-        echo "  rm '$BACKUP_FILE'"
+        echo "  rm '$PREVIEW_FILE'"
+        if [ "$FORGOT_STDIN_ARG_FLAG" = true ]; then
+            echo ""
+            echo "💡 Tip: '-' was missing; I read from stdin this time."
+        fi
     fi
 fi

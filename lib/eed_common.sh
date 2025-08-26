@@ -12,14 +12,38 @@ EED_LOG_FILE="$HOME/.eed_command_log.txt"
 
 # Show usage information
 show_usage() {
-    echo "Usage: eed [--debug] <file> <ed_script>"
+    echo "Usage: eed [--debug] [--force] [--disable-auto-reorder] FILE {SCRIPT|-}"
     echo ""
-    echo "Single-parameter mode with heredoc support for complex operations."
+    echo "Modes (preferred examples first):"
+    echo ""
+    echo "  1) Pipe a simple instruction stream (quick):"
+    echo "     printf '1d\nw\nq\n' | eed FILE -"
+    echo ""
+    echo "  2) Use heredoc with '-' to pass complex scripts via stdin:"
+    echo "     eed FILE - <<'EOF'"
+    echo "     3c"
+    echo "     new content"
+    echo "     ."
+    echo "     w"
+    echo "     q"
+    echo "     EOF"
+    echo ""
+    echo "  3) Single-parameter heredoc/inline (legacy):"
+    echo "     eed FILE \"\$(cat <<'EOF'"
+    echo "     3c"
+    echo "     new content"
+    echo "     ."
+    echo "     w"
+    echo "     q"
+    echo "     EOF"
+    echo "     )\""
     echo ""
     echo "Options:"
     echo "  --debug    Enable debug mode (preserve temp files, verbose errors)"
+    echo "  --force    Skip preview-confirm workflow, edit file directly"
+    echo "  --disable-auto-reorder  Disable automatic script reordering"
     echo ""
-    echo "Common ed commands:"
+    echo "Common ed commands (examples):"
     echo "  Nd             - Delete line N"
     echo "  N,Md           - Delete lines N through M"
     echo "  Nc <text> .    - Replace line N with <text>"
@@ -30,29 +54,17 @@ show_usage() {
     echo "  /pattern/p     - Print lines matching pattern"
     echo "  s/old/new/g    - Replace all 'old' with 'new' on current line"
     echo "  1,\$s/old/new/g - Replace all 'old' with 'new' in entire file"
-    echo ""
-    echo "Examples:"
-    echo '  eed file.txt "5d\nw\nq"                    # Delete line 5'
-    echo '  eed file.txt ",p\nq"                       # View entire file'
-    echo '  eed file.txt "$(cat <<'\''EOF'\''            # Complex operations'
-    echo '  3c'
-    echo '  new content'
-    echo '  .'
-    echo '  w'
-    echo '  q'
-    echo '  EOF'
-    echo '  )"'
 }
 
 # Log ed commands for analysis and debugging
 log_ed_commands() {
     local script_content="$1"
-    
+
     # Skip logging during tests
     if [[ "${EED_TESTING:-}" == "1" ]]; then
         return 0
     fi
-    
+
     local timestamp
     timestamp=$(date --iso-8601=seconds)
 
@@ -77,7 +89,7 @@ log_ed_commands() {
         fi
 
         # Check for commands that enter input mode *after* trying to log the command itself
-        if [[ "$line" =~ ^(\.|[0-9]+)?,?(\$|[0-9]+)?[aAcCiI]$ ]]; then
+        if [[ "$line" =~ ${EED_REGEX_INPUT_MODE} ]]; then
             in_input_mode=true
         fi
 
