@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+w=$(mktemp /tmp/nowhite.XXXXXX); trap 'rm -f "$w"' EXIT
+git tidy # clean up all files and add them to stage, including new files: all files cleaned with some work unnecessary
+git diff -w -b HEAD > "$w" # good work to keep 
+git reset -- . # ensure stage area is empty, new files was removed from stage but it doesn't matter, we'll add them back by next line
+[ -s "$w" ] && git apply --cached --ignore-whitespace --whitespace=fix --reject "$w" && git checkout -- . #apply them to stage and  cleanup current workspace: remove unstaged changes (those unnecessary whitespace claenup)
