@@ -1,0 +1,47 @@
+#!/bin/bash
+# 防止在非交互shell中执行复杂逻辑
+[[ "$-" != *i* ]] && exec /mingw64/bin/git "$@"
+
+# Path to original git binary
+ORIGINAL_GIT="/mingw64/bin/git"
+
+# Configuration mapping
+declare -A ACCOUNT_CONFIG
+ACCOUNT_CONFIG[shukebeta]="personal"
+ACCOUNT_CONFIG[Euronet-XE]="work"
+ACCOUNT_CONFIG[company-org]="work"
+
+# Account settings
+declare -A SSH_KEYS
+SSH_KEYS[personal]="~/.ssh/id_rsa"
+SSH_KEYS[work]="~/.ssh/id_rsa"
+
+declare -A USER_NAMES
+USER_NAMES[personal]="shukebeta"
+USER_NAMES[work]="David.Wei"
+
+declare -A USER_EMAILS
+USER_EMAILS[personal]="weizhong2004@gmail.com"
+USER_EMAILS[work]="david.wei@xe.com"
+
+# Only configure if we're in a git repository
+if "$ORIGINAL_GIT" rev-parse --git-dir >/dev/null 2>&1; then
+    remote_url=$("$ORIGINAL_GIT" remote get-url origin 2>/dev/null)
+
+    if [[ $remote_url =~ github\.com[:/]([^/]+) ]]; then
+        repo_owner="${BASH_REMATCH[1]}"
+        account_type="${ACCOUNT_CONFIG[$repo_owner]}"
+
+        if [[ -n "$account_type" ]]; then
+            # Set SSH key
+            export GIT_SSH_COMMAND="ssh -i ${SSH_KEYS[$account_type]}"
+
+            # Set git config for this repository
+            "$ORIGINAL_GIT" config user.name "${USER_NAMES[$account_type]}"
+            "$ORIGINAL_GIT" config user.email "${USER_EMAILS[$account_type]}"
+        fi
+    fi
+fi
+
+# Execute original git command
+exec "$ORIGINAL_GIT" "$@"
