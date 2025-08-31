@@ -8,13 +8,19 @@ fi
 EED_VALIDATOR_LOADED=1
 # Source the shared regex patterns
 source "$(dirname "${BASH_SOURCE[0]}")/eed_regex_patterns.sh"
+# Source smart dot protection functionality
+source "$(dirname "${BASH_SOURCE[0]}")/eed_smart_dot_protection.sh"
+# Source reordering functionality
+source "$(dirname "${BASH_SOURCE[0]}")/eed_reorder.sh"
+# Source input handling functionality
+source "$(dirname "${BASH_SOURCE[0]}")/eed_input_handler.sh"
 
 
 # Disable history expansion to prevent ! character escaping
 set +H
 
 # Validate ed script for basic requirements
-validate_ed_script() {
+is_ed_script_valid() {
     local script="$1"
 
     # Check for empty script - treat as no-op, not error
@@ -26,20 +32,46 @@ validate_ed_script() {
     # Check if script ends with 'q' or 'Q' command
     if ! echo "$script" | grep -q '[qQ]$'; then
         echo "Warning: Ed script does not end with 'q' or 'Q' command" >&2
-        echo "This may cause ed to wait for input or hang" >&2
-        echo "Consider adding 'q' (save and quit) or 'Q' (quit without save) at the end" >&2
         # Don't fail - just warn, as user might intentionally want this
     fi
 
     return 0
 }
 
+
+
 # TODO: Implement enhanced validator with parsing stack
-# validate_ed_script_enhanced() {
+# is_ed_script_valid_enhanced() {
 #     # The enhanced validator from user's example will go here
 # }
 
 # Classify ed script and validate commands
+# Small, focused helpers make the main classifier logic clearer.
+__cs_is_input_line() {
+    local line="$1"
+    is_input_command "$line"
+    return $?
+}
+
+__cs_is_modifying_line() {
+    local line="$1"
+    # Any of these indicate a modifying operation
+    is_modifying_command "$line" && return 0
+    is_substitute_command "$line" && return 0
+    is_write_command "$line" && return 0
+    return 1
+}
+
+__cs_is_view_line() {
+    local line="$1"
+    is_view_command "$line" && return 0
+    is_quit_command "$line" && return 0
+    is_address_only "$line" && return 0
+    is_global_command "$line" && return 0
+    is_search_command "$line" && return 0
+    return 1
+}
+
 classify_ed_script() {
     local script="$1"
     local line
@@ -51,7 +83,7 @@ classify_ed_script() {
         line="${line%"${line##*[![:space:]]}"}"  # rtrim
         [ -z "$line" ] && continue
 
-        # Get current context from parsing stack
+        # Current context (INPUT when inside a/c/i block)
         local current_context=""
         if [ ${#parsing_stack[@]} -gt 0 ]; then
             current_context="${parsing_stack[${#parsing_stack[@]}-1]}"
@@ -65,46 +97,30 @@ classify_ed_script() {
             continue
         fi
 
-        # Check for modifying commands (append, change, insert)
-        if is_input_command "$line"; then
+        # Input-mode starters are modifying operations
+        if __cs_is_input_line "$line"; then
             parsing_stack+=("INPUT")
             echo "has_modifying"
             return 0
         fi
 
-        # Other modifying commands (delete, move, etc)
-        if is_modifying_command "$line"; then
+        # Other modifying commands (delete, move, substitute, write)
+        if __cs_is_modifying_line "$line"; then
             echo "has_modifying"
             return 0
         fi
 
-        # Substitute command: [range]s/pattern/replacement/[flags]
-        if is_substitute_command "$line"; then
-            echo "has_modifying"
-            return 0
+        # Valid view-only commands and navigational commands
+        if __cs_is_view_line "$line"; then
+            continue
         fi
 
-        if is_write_command "$line"; then
-            echo "has_modifying"
-            return 0
-        fi
-
-        # Check for valid view commands
-        if is_view_command "$line" || \
-           is_quit_command "$line" || \
-           is_address_only "$line" || \
-           is_global_command "$line" || \
-           is_search_command "$line"; then
-            continue  # Valid view command, keep checking
-        else
-            # Invalid command found
-            echo "invalid_command"
-            return 0
-        fi
-
+        # If none matched, it's an invalid/unknown command
+        echo "invalid_command"
+        return 0
     done <<< "$script"
 
-    # If we get here, all commands were valid view commands
+    # All lines validated as view-only / navigational
     echo "view_only"
     return 0
 }
@@ -114,52 +130,134 @@ classify_ed_script() {
 # but the dots got interpreted as ed terminators instead
 detect_dot_trap() {
     local script="$1"
+    local -a lines
+    local -a suspicious_line_numbers=()
+    local is_confirmed_tutorial=false
     local line_count=0
-    local dot_count=0
-    local suspicious_pattern=false
 
-    # Count lines and standalone dots
-    while IFS= read -r line; do
-        ((line_count++))
-        if [[ "$line" = "." ]]; then
-            ((dot_count++))
+    # Parse script into array
+    readarray -t lines <<< "$script"
+
+    # Helper function to check if a line is a valid ed command
+    is_valid_ed_command() {
+        local cmd="$1"
+        [[ -z "$cmd" ]] && return 1
+
+        # Match common ed commands: addresses, operations, combinations
+        [[ "$cmd" =~ ^[0-9]*[aicdspmtjklnpwqQ=].*$ ]] || \
+        [[ "$cmd" =~ ^\$[aicdspmtjklnpwqQ=].*$ ]] || \
+        [[ "$cmd" =~ ^/.*/.* ]] || \
+        [[ "$cmd" =~ ^[0-9]*,[0-9]*[aicdspmtjklnpwqQ=] ]] || \
+        [[ "$cmd" =~ ^g/.*/[dps] ]] || \
+        [[ "$cmd" =~ ^[wqQ]$ ]]
+    }
+
+    for i in "${!lines[@]}"; do
+        local line="${lines[i]}"
+        line_count=$((line_count + 1))
+
+        if [[ "$line" == "." ]]; then
+            local next_line="${lines[$((i+1))]:-}"
+
+            if [[ "$is_confirmed_tutorial" == true ]]; then
+                # Already confirmed tutorial - this dot is suspicious
+                suspicious_line_numbers+=($i)
+            elif is_valid_ed_command "$next_line"; then
+                # Dot followed by valid ed command - potentially suspicious
+                suspicious_line_numbers+=($i)
+            else
+                # Dot not followed by valid ed command - immediately suspicious
+                suspicious_line_numbers+=($i)
+            fi
         fi
 
-        # Look for patterns suggesting heredoc usage attempt
-        if [[ "$line" =~ ${EED_REGEX_INPUT_BASIC} ]] || [[ "$line" =~ ${EED_REGEX_WRITE_BASIC} ]] || [[ "$line" =~ ${EED_REGEX_QUIT_BASIC} ]]; then
-            suspicious_pattern=true
-        fi
-    done <<< "$script"
+        if [[ "$line" =~ ^[qQ]$ ]] && [[ "$is_confirmed_tutorial" == false ]]; then
+            # Found quit command, check if there's content after it
+            local has_content_after_q=false
+            for ((j=i+1; j<${#lines[@]}; j++)); do
+                local remaining_line="${lines[j]}"
+                # Skip empty lines and whitespace-only lines
+                if [[ -n "${remaining_line// /}" ]]; then
+                    has_content_after_q=true
+                    break
+                fi
+            done
 
-    # Heuristic: if we have multiple standalone dots and ed commands,
-    # this might be a case where heredoc wasn't used properly
-    if [ $dot_count -gt 1 ] && [ "$suspicious_pattern" = true ] && [ $line_count -gt 5 ]; then
-        echo "POTENTIAL_DOT_TRAP:$line_count:$dot_count"
+            if [[ "$has_content_after_q" == true ]]; then
+                # Confirmed tutorial scenario - q followed by content
+                is_confirmed_tutorial=true
+            else
+                # Normal script ending - BUT keep suspicious dots if there are many
+                # This handles legitimate complex scripts that should still be flagged
+                if [ ${#suspicious_line_numbers[@]} -gt 2 ]; then
+                    # Keep the suspicious dots - this might be a complex script worth warning about
+                    break
+                else
+                    # Few dots in normal script ending - clear them
+                    suspicious_line_numbers=()
+                    break
+                fi
+            fi
+        fi
+    done
+
+    # Handle case where script ends without q command
+    if [[ "$is_confirmed_tutorial" == false ]] && [ ${#suspicious_line_numbers[@]} -gt 0 ]; then
+        # Script ended without q/Q - decide based on number of suspicious dots
+        if [ ${#suspicious_line_numbers[@]} -gt 2 ]; then
+            # Many suspicious dots without proper ending - likely complex script needing warning
+            is_confirmed_tutorial=false  # Keep as potential complex script, not tutorial
+        else
+            # Few dots in script without q - probably normal, clear them
+            suspicious_line_numbers=()
+        fi
+    fi
+
+    # If we found suspicious dots (either confirmed tutorial or immediate suspicious cases)
+    if [ ${#suspicious_line_numbers[@]} -gt 0 ]; then
+        echo "POTENTIAL_DOT_TRAP:$line_count:${#suspicious_line_numbers[@]}:tutorial=$is_confirmed_tutorial"
         return 1
     fi
 
     return 0
 }
 
-# Provide helpful guidance about dot usage
-suggest_dot_fix() {
+
+# Smart dot protection integration
+# Attempts to intelligently handle multiple dots in ed tutorial/documentation contexts
+# Returns the (possibly transformed) script on stdout
+apply_smart_dot_handling() {
     local script="$1"
+    local file_path="$2"
 
-    echo "⚠️  Detected multiple standalone dots in ed script" >&2
-    echo "   If you're using complex ed commands, consider using heredoc syntax:" >&2
-    echo "   eed file.txt \"\$(cat <<'EOF'" >&2
-    echo "   your ed commands here" >&2
-    echo "   use actual . (dot) for content termination in ed commands" >&2
-    echo "   EOF" >&2
-    echo "   )\"" >&2
-    echo "" >&2
-    echo "   Proceeding with current script..." >&2
+    # First check if we should attempt smart protection
+    local confidence
+    confidence=$(detect_ed_tutorial_context "$script" "$file_path")
+    local detection_result=$?
 
-    return 0
+    if [ "$detection_result" -eq 0 ]; then
+        # High confidence - attempt transformation
+        local transformed_script
+        if transformed_script=$(transform_content_dots "$script"); then
+            echo "✨ Smart dot protection applied for ed tutorial editing (confidence: ${confidence}%)" >&2
+            echo "$transformed_script"
+            return 0
+        else
+            echo "⚠️  Smart dot protection failed, falling back to standard guidance" >&2
+        fi
+    elif [ "$confidence" -ge 40 ]; then
+        # Medium confidence - provide enhanced guidance
+        echo "🤔 Detected possible ed tutorial editing (confidence: ${confidence}%)" >&2
+        echo "   For complex cases with multiple dots, consider using Edit/Write tools instead" >&2
+    fi
+
+    # Default: return original script unchanged
+    echo "$script"
+    return 1
 }
 
 # Detect complex patterns that are unsafe for automatic reordering
-detect_complex_patterns() {
+no_complex_patterns() {
     local script="$1"
     local line
     local -a addresses=()
@@ -188,25 +286,25 @@ detect_complex_patterns() {
 
         # Detect g/v blocks with modifying commands
         if [[ "$line" =~ $EED_REGEX_GV_MODIFYING ]]; then
-            echo "COMPLEX: g/v block with modifying command detected: $line" >&2
+            [ "$DEBUG_MODE" = true ] && echo "COMPLEX: g/v block with modifying command detected: $line" >&2
             return 1
         fi
 
         # Detect non-numeric addresses with modifying commands
         if [[ "$line" =~ $EED_REGEX_NON_NUMERIC_MODIFYING ]]; then
-            echo "COMPLEX: Non-numeric address with modifying command detected: $line" >&2
+            [ "$DEBUG_MODE" = true ] && echo "COMPLEX: Non-numeric address with modifying command detected: $line" >&2
             return 1
         fi
 
         # Detect offset addresses with modifying commands
         if [[ "$line" =~ $EED_REGEX_OFFSET_MODIFYING ]]; then
-            echo "COMPLEX: Offset address with modifying command detected: $line" >&2
+            [ "$DEBUG_MODE" = true ] && echo "COMPLEX: Offset address with modifying command detected: $line" >&2
             return 1
         fi
 
         # Detect move/transfer/read commands
         if [[ "$line" =~ ${EED_REGEX_MOVE_TRANSFER} ]]; then
-            echo "COMPLEX: Move/transfer/read command detected: $line" >&2
+            [ "$DEBUG_MODE" = true ] && echo "COMPLEX: Move/transfer/read command detected: $line" >&2
             return 1
         fi
 
@@ -239,7 +337,7 @@ detect_complex_patterns() {
     # Check for same-address conflicts
     local -A addr_count
     for addr in "${addresses[@]}"; do
-        ((addr_count[$addr]++))
+        addr_count[$addr]=$((${addr_count[$addr]:-0} + 1))
         if (( addr_count[$addr] > 1 )); then
             echo "COMPLEX: Multiple operations on same address: $addr" >&2
             return 1
@@ -248,224 +346,85 @@ detect_complex_patterns() {
 
     return 0  # No complex patterns detected
 }
-
-# Automatically reorder ed script commands to prevent line number conflicts
-# Returns reordered script via stdout, shows user-friendly messages via stderr
-# Maintains backward compatibility by handling complex pattern detection internally
-reorder_script() {
+# Validate line number ranges in ed script
+validate_line_ranges() {
     local script="$1"
+    local file_path="$2"
+    local max_lines
     local line
-    local -a script_lines=()
-    local -a modifying_commands=()
-    local -a modifying_line_numbers=()
-    local line_index=0
 
-    # Note: Complex pattern detection is now handled externally in the unified architecture
-    # This function focuses purely on reordering logic
+    # Get file line count (handle case where file doesn't exist yet)
+    if [ -f "$file_path" ]; then
+        max_lines=$(wc -l < "$file_path")
+        # Handle empty files: ed treats them as having 1 empty line
+        [ "$max_lines" -eq 0 ] && max_lines=1
+    else
+        # File doesn't exist yet - assume it will be created as empty (1 line)
+        max_lines=1
+    fi
 
-    # Step 1: Parse script and collect all lines and modifying commands
     while IFS= read -r line; do
-        script_lines+=("$line")
+        # Trim whitespace and skip empty lines
+        line="${line#"${line%%[![:space:]]*}"}"  # ltrim
+        line="${line%"${line##*[![:space:]]}"}"  # rtrim
+        [ -z "$line" ] && continue
+
+        # Skip input mode content (between commands like 'a' and '.')
+        if [[ "$line" == "." ]]; then
+            continue
+        fi
+
+        # Check line number ranges using existing regex
         if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
-            modifying_commands+=("$line_index:${BASH_REMATCH[1]}:$line")
-            modifying_line_numbers+=("${BASH_REMATCH[1]}")
-        fi
-        ((line_index++))
-    done <<< "$script"
+            local start_line="${BASH_REMATCH[1]}"
+            local end_line="${BASH_REMATCH[3]}"
 
-    # Step 2: Check if reordering is needed (same logic as before)
-    if [ ${#modifying_line_numbers[@]} -lt 2 ]; then
-        printf '%s\n' "${script_lines[@]}"  # Output original script
-        return 0
-    fi
-
-    local original_sequence="${modifying_line_numbers[*]}"
-    local sorted_line_numbers
-    mapfile -t sorted_line_numbers < <(printf '%s\n' "${modifying_line_numbers[@]}" | sort -n)
-    local sorted_sequence_str="${sorted_line_numbers[*]}"
-
-    # Step 3: If no reordering needed, return original script
-    if [ "$original_sequence" != "$sorted_sequence_str" ]; then
-        printf '%s\n' "${script_lines[@]}"  # Output original script
-        return 0
-    fi
-
-    # Check for unique line numbers to avoid false positives
-    local unique_count
-    unique_count=$(printf '%s\n' "${modifying_line_numbers[@]}" | uniq | wc -l)
-    if [ "$unique_count" -le 1 ]; then
-        printf '%s\n' "${script_lines[@]}"  # Output original script
-        return 0
-    fi
-
-    # Step 4: Perform automatic reordering
-    echo "✓ Auto-reordering script to prevent line numbering conflicts:" >&2
-    local original_formatted="($(IFS=, ; echo "${modifying_line_numbers[*]}"))"
-
-    # Sort modifying commands by line number in descending order
-    local -a sorted_modifying_commands
-    mapfile -t sorted_modifying_commands < <(printf '%s\n' "${modifying_commands[@]}" | sort -s -t: -k2,2nr -k1,1n)
-
-    local reverse_sorted_line_numbers
-    mapfile -t reverse_sorted_line_numbers < <(printf '%s\n' "${modifying_line_numbers[@]}" | sort -nr)
-    local suggested_formatted="($(IFS=, ; echo "${reverse_sorted_line_numbers[*]}"))"
-
-    echo "   Original: ${original_formatted} → Reordered: ${suggested_formatted}" >&2
-    echo "" >&2
-
-    # Step 5: Build reordered script - handle input mode commands as atomic units
-    local -a reordered_script=()
-    local -a processed_indices=()
-
-    # Add modifying commands in new order with their associated data
-    for cmd_info in "${sorted_modifying_commands[@]}"; do
-        local old_index="${cmd_info%%:*}"
-        local cmd_line="${cmd_info##*:}"
-
-        reordered_script+=("$cmd_line")
-        processed_indices+=("$old_index")
-
-        # If this is an input mode command (a, c, i), include following content until "."
-        if [[ "$cmd_line" =~ [aAcCiI]$ ]]; then
-            local content_idx=$((old_index + 1))
-            while [ "$content_idx" -lt "${#script_lines[@]}" ]; do
-                local content_line="${script_lines[$content_idx]}"
-                reordered_script+=("$content_line")
-                processed_indices+=("$content_idx")
-                if [ "$content_line" = "." ]; then
-                    break
-                fi
-                ((content_idx++))
-            done
-        fi
-    done
-
-    # Add remaining non-processed commands in original order
-    for i in "${!script_lines[@]}"; do
-        local is_processed=false
-        for proc_idx in "${processed_indices[@]}"; do
-            if [ "$i" = "$proc_idx" ]; then
-                is_processed=true
-                break
+            # Check start line number
+            if [ "$start_line" -gt "$max_lines" ]; then
+                echo "✗ Line number error in command '$line'" >&2
+                echo "  Line $start_line does not exist (file has only $max_lines lines)" >&2
+                return 1
             fi
-        done
-        if [ "$is_processed" = false ]; then
-            reordered_script+=("${script_lines[$i]}")
-        fi
-    done
 
-    # Output reordered script
-    printf '%s\n' "${reordered_script[@]}"
-    return 1 # Signal that reordering was performed
-}
-
-# Legacy function for backward compatibility with existing tests
-# Detects line order issues but doesn't reorder (just warns)
-detect_line_order_issue() {
-    local script="$1"
-    local line
-    local -a modifying_line_numbers=()
-
-    # Parse script to extract line numbers from modifying commands
-    while IFS= read -r line; do
-        if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
-            modifying_line_numbers+=("${BASH_REMATCH[1]}")
+            # Check end line number (if it's not $ and not empty)
+            if [ -n "$end_line" ] && [ "$end_line" != "\$" ] && [ "$end_line" -gt "$max_lines" ]; then
+                echo "✗ Line number error in command '$line'" >&2
+                echo "  Line $end_line does not exist (file has only $max_lines lines)" >&2
+                return 1
+            fi
         fi
     done <<< "$script"
-
-    if [ ${#modifying_line_numbers[@]} -lt 2 ]; then
-        return 0
-    fi
-
-    local original_sequence="${modifying_line_numbers[*]}"
-    local sorted_line_numbers
-    mapfile -t sorted_line_numbers < <(printf '%s\n' "${modifying_line_numbers[@]}" | sort -n)
-    local sorted_sequence_str="${sorted_line_numbers[*]}"
-
-    if [ "$original_sequence" = "$sorted_sequence_str" ]; then
-        local unique_count
-        unique_count=$(printf '%s\n' "${modifying_line_numbers[@]}" | uniq | wc -l)
-
-        if [ "$unique_count" -gt 1 ]; then
-            local reverse_sorted_line_numbers
-            mapfile -t reverse_sorted_line_numbers < <(printf '%s\n' "${modifying_line_numbers[@]}" | sort -nr)
-
-            local original_formatted="($(IFS=, ; echo "${modifying_line_numbers[*]}"))"
-            local suggested_formatted="($(IFS=, ; echo "${reverse_sorted_line_numbers[*]}"))"
-
-            echo "⚠️  Detected operations on ascending line numbers ${original_formatted}" >&2
-            echo "💡 Consider reordering: start from line ${suggested_formatted}" >&2
-            echo "   Reason: Earlier deletions shift line numbers, affecting later operations" >&2
-            echo "" >&2
-            return 1
-        fi
-    fi
 
     return 0
 }
 
-# --- SAFETY OVERRIDE DETECTION FUNCTIONS ---
-
-# Emit machine-readable safety override tag (called only once)
-emit_safety_override_tag() {
-    local reason="${1:-complex_unordered}"
-    # Machine-readable tag to stdout for CI/test harnesses that only capture stdout
-    printf '%s\n' "EED-SAFETY-OVERRIDE:reason=$reason"
-    # SAFETY message to stdout for test compatibility
-    printf '%s\n' "SAFETY: --force ignored due to high-risk pattern detection"
-    # Additional human-readable message to stderr
-    printf '%s\n' "SAFETY: --force ignored due to high-risk pattern detection" >&2
-}
-
-# Check if script contains complex patterns that make it unpredictable
-has_complex_patterns() {
-    local script="$1"
-    local line
-    
-    while IFS= read -r line; do
-        line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$line" ] && continue
-        
-        # Detect global/visual commands
-        if [[ "$line" =~ ^[gvGV]/ ]]; then
-            return 0
-        fi
-        
-        # Detect move/transfer commands  
-        if [[ "$line" =~ [mMtT] ]]; then
-            return 0
-        fi
-        
-    done <<< "$script"
-    
-    return 1
-}
+# --- COMPLEX PATTERN DETECTION FUNCTIONS ---
 
 # Determine ordering pattern of line numbers
 determine_ordering() {
     local script="$1"
     local line
     local -a numbers=()
-    
+
     while IFS= read -r line; do
         line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         [ -z "$line" ] && continue
-        
+
         if [[ "$line" =~ ^([0-9]+) ]]; then
             numbers+=("${BASH_REMATCH[1]}")
         fi
     done <<< "$script"
-    
+
     if [ ${#numbers[@]} -lt 2 ]; then
         echo "single"
         return 0
     fi
-    
+
     local orig="${numbers[*]}"
     local sorted
     sorted=$(printf '%s\n' "${numbers[@]}" | sort -n | tr '\n' ' ')
     sorted=${sorted% }
-    
+
     if [ "$orig" = "$sorted" ]; then
         echo "ascending"
     else
