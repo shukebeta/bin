@@ -30,17 +30,25 @@ ARGUMENTS:
 
 EXAMPLES:
   # Preview mode (default - safe)
-  eed file.txt "1a\nHello\n.\nw\nq"
+  eed file.txt $'1a\nHello\n.\nw\nq'
 
   # Direct mode (skip preview)
-  eed --force file.txt "1d\nw\nq"
+  eed --force file.txt $'1d\nw\nq'
 
   # Read from stdin
-  echo "1a\nContent\n.\nw\nq" | eed file.txt -
+  echo $'1a\nContent\n.\nw\nq' | eed file.txt -
+
+  # For complex scripts, use heredoc syntax - avoid nested heredocs
+  # (this prevents shell interpretation of the script content)
+  eed /unix/style/path/to/file - <<'EOF'
+  # ed commands here
+  w
+  q
+  EOF
 
 WORKFLOW:
   1. Validates ed commands for safety
-  2. Creates preview in file.eed.preview
+  2. Automatically creates preview in file.eed.preview
   3. Shows diff and instructions (unless --force)
   4. Provides clear next steps
 
@@ -99,28 +107,3 @@ log_ed_commands() {
         fi
     done <<< "$script_content"
 }
-# Unified error reporting function
-# Usage: error_exit "message" [exit_code] [show_usage_or_custom_message]
-error_exit() {
-    local message="$1"
-    local exit_code="${2:-1}"
-    local second_message="${3:-}"
-    
-    # Standardized error format
-    echo "✗ Error: $message" >&2
-    
-    # Debug mode: show basic stack info
-    if [ "${DEBUG_MODE:-}" = "true" ]; then
-        echo "  Location: ${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} in ${FUNCNAME[1]}()" >&2
-    fi
-    
-    # Handle second message (usage hint or custom message)
-    if [ "$second_message" = "true" ]; then
-        echo "Use 'eed --help' for usage information" >&2
-    elif [ -n "$second_message" ] && [ "$second_message" != "false" ]; then
-        echo "$second_message" >&2
-    fi
-    
-    exit "$exit_code"
-}
-
