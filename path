@@ -7,7 +7,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source the library functions
-source "$SCRIPT_DIR/path_lib.sh"
+source "$SCRIPT_DIR/lib/path_lib.sh"
 
 # Function to safely exit or return based on how script was called
 safe_exit() {
