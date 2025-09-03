@@ -7,6 +7,9 @@ if [ "${EED_COMMON_LOADED:-}" = "1" ]; then
 fi
 EED_COMMON_LOADED=1
 
+# Source regex patterns
+source "$(dirname "${BASH_SOURCE[0]}")/eed_regex_patterns.sh"
+
 # Ed command logging configuration
 EED_LOG_FILE="$HOME/.eed_command_log.txt"
 
@@ -52,6 +55,14 @@ WORKFLOW:
   3. Shows diff and instructions (unless --force)
   4. Provides clear next steps
 
+
+# Cross-platform line normalization for Git Bash/Windows compatibility
+# Removes trailing \r characters that cause CRLF issues
+normalize_line() {
+    local line="$1"
+    # Remove trailing \r if present (CRLF -> LF)
+    echo "${line%$'\r'}"
+}
 SAFETY FEATURES:
   - Original files never corrupted
   - Preview-first workflow

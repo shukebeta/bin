@@ -32,7 +32,7 @@ line3
 EOF
 
     # Single parameter containing complete ed script
-    run $SCRIPT_UNDER_TEST --force test.txt "3a
+    run "$SCRIPT_UNDER_TEST" --force test.txt "3a
 new line
 .
 w
@@ -50,7 +50,7 @@ line3
 EOF
 
     # Test heredoc integration
-    run $SCRIPT_UNDER_TEST --force test.txt "$(cat <<'EOF'
+    run "$SCRIPT_UNDER_TEST" --force test.txt "$(cat <<'EOF'
 2c
 replaced line
 .
@@ -71,7 +71,7 @@ original
 EOF
 
     # User manually controls w/q
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 w
@@ -88,10 +88,20 @@ line2
 line3
 EOF
 
-    # Multi-step workflow with intermediate save — pipe the script via stdin so bats captures status reliably
+    # Multi-step workflow with intermediate save using heredoc (Git Bash compatible)
     # Force apply the preview so the test verifies file changes rather than the preview behavior.
     # Also disable auto-reordering so --force is not cancelled by safety reordering.
-    run bash -c "printf '1c\nchanged1\n.\nw\n2c\nchanged2\n.\nw\nq\n' | EED_FORCE_OVERRIDE=true $SCRIPT_UNDER_TEST --force --disable-auto-reorder test.txt -"
+    run env EED_FORCE_OVERRIDE=true "$SCRIPT_UNDER_TEST" --force --disable-auto-reorder test.txt - << 'EOF'
+1c
+changed1
+.
+w
+2c
+changed2
+.
+w
+q
+EOF
     [ "$status" -eq 0 ]
     run grep -q "changed1" test.txt
     [ "$status" -eq 0 ]
@@ -105,7 +115,7 @@ original
 EOF
 
     # Script without w should warn but not fail
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 Q"
@@ -124,7 +134,7 @@ original
 EOF
 
     # Script without q should still complete
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 w"
@@ -139,7 +149,7 @@ placeholder
 EOF
 
     # Test complex content with quotes and special characters
-    run $SCRIPT_UNDER_TEST --force test.txt "$(cat <<'OUTER'
+    run "$SCRIPT_UNDER_TEST" --force test.txt "$(cat <<'OUTER'
 1c
 Content with 'single' and "double" quotes
 Line with $dollar and `backticks`
@@ -165,7 +175,7 @@ original content
 EOF
 
     # Empty ed script should return error
-    run $SCRIPT_UNDER_TEST --force test.txt ""
+    run "$SCRIPT_UNDER_TEST" --force test.txt ""
     [ "$status" -ne 0 ]
     [[ "$output" == *"Error: Empty ed script provided"* ]]
     # File should remain unchanged

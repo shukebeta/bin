@@ -36,6 +36,27 @@ normalize_path() {
     echo "$path" | sed 's|\\|/|g'
 }
 
+# Escape dollar signs in replacement string for ripgrep
+# Converts literal $VARIABLE to $$VARIABLE while preserving capture groups $1, $2, etc.
+escape_replacement() {
+    local replacement="$1"
+    local pattern="${2:-}"
+    
+    # Check if pattern contains capture groups (parentheses that aren't escaped)
+    local has_groups=false
+    if [[ -n "$pattern" ]] && echo "$pattern" | grep -q '([^)]*)'  ; then
+        has_groups=true
+    fi
+    
+    if [[ "$has_groups" == "true" ]]; then
+        # Pattern has capture groups - preserve $1, $2, etc., escape everything else
+        echo "$replacement" | sed 's/\$\([^0-9{]\)/$$\1/g'
+    else
+        # Pattern has no capture groups - escape ALL dollars including $1, $2, etc.
+        echo "$replacement" | sed 's/\$/$$/g'
+    fi
+}
+
 
 # Search for content with line numbers (for display)
 rg_search_content() {
@@ -127,8 +148,11 @@ rg_get_preview() {
     local extra_opts=("$@")
 
     # Use the same --passthru mechanism as safe_replace_file for consistency
-    local replace_opts=("--replace" "$replacement" "--passthru" "--color=never")
-    rg "${extra_opts[@]}" "${replace_opts[@]}" "$pattern" "$file" 2>/dev/null
+    # Escape dollar signs to prevent shell variable expansion
+    local escaped_replacement
+    escaped_replacement=$(escape_replacement "$replacement" "$pattern")
+    
+    rg "${extra_opts[@]}" --replace "$escaped_replacement" --passthru --color=never "$pattern" "$file" 2>/dev/null
 }
 
 # Perform safe file replacement with backup
@@ -143,8 +167,11 @@ safe_replace_file() {
     cp "$file" "$file.bak"
 
     # Perform replacement
-    local replace_opts=("--replace" "$replacement" "--passthru" "--color=never")
-    rg "${extra_opts[@]}" "${replace_opts[@]}" "$pattern" "$file" > "$file.tmp" 2>/dev/null
+    # Escape dollar signs to prevent shell variable expansion
+    local escaped_replacement
+    escaped_replacement=$(escape_replacement "$replacement" "$pattern")
+    
+    rg "${extra_opts[@]}" --replace "$escaped_replacement" --passthru --color=never "$pattern" "$file" > "$file.tmp" 2>/dev/null
     local rg_exit=$?
 
     if [[ $rg_exit -eq 0 ]] || [[ $rg_exit -eq 1 ]]; then

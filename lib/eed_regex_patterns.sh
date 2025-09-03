@@ -63,6 +63,7 @@ readonly EED_REGEX_ADDR_CMD='^([0-9]+)(,([0-9]+|\$))?([dDcCbBiIaAsS])'
 readonly EED_REGEX_MOVE_TRANSFER='^[[:space:]]*[0-9]*,?[0-9]*[mMtTrR]'
 
 # Input mode detection pattern (from eed_common.sh)
+# shellcheck disable=SC2034
 readonly EED_REGEX_INPUT_MODE='^(\.|[0-9]+)?,?(\$|[0-9]+)?[aAcCiI]$'
 
 # --- Substitute command regex detection ---
@@ -74,7 +75,8 @@ detect_substitute_regex() {
 
     probe="s/x/x/"
     strict='s(.)([^\\]|\\.)*\1([^\\]|\\.)*\1([0-9]+|[gp]+)?$'
-    fallback='s(.)[^[:space:]]*\1[^[:space:]]*\1([0-9gp]+)?$'
+    # Fallback: very permissive - allow any characters including backslashes, non-space delimiters
+    fallback='s([^[:space:]]).*\1.*\1([0-9gp]*)?$'
 
     # Require all probes to pass
     if [[ "s/.*console\.log.*;//" =~ $strict ]]; then
