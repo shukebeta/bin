@@ -221,16 +221,26 @@ write_custom_paths() {
         echo "⚠️  Consider manually backing up your .bashrc first"
     fi
     
-    # Remove existing CUSTOM_PATHS block and related exports
+    # Remove existing CUSTOM_PATHS block and related exports.
+    # Do this safely by writing to a temp file and preserving other content to avoid
+    # accidental in-place deletions that can leave .bashrc syntactically broken.
     if [ -f "$BASHRC_FILE" ]; then
-        # Use a more comprehensive approach to remove the entire block safely
-        # This removes everything from the comment to the final export statement
-        sed -i '/^# Custom PATH management - added by path script$/,/^export PATH=.*\$CUSTOM_PATHS_STR/d' "$BASHRC_FILE"
+        local tmpfile
+        tmpfile=$(mktemp) || tmpfile="/tmp/.bashrc.tmp.$$"
+        awk '
+            BEGIN {del=0}
+            # Start deleting when we hit the marker line
+            $0 == "# Custom PATH management - added by path script" { del=1; next }
+            # Stop deleting when we hit the export that references CUSTOM_PATHS_STR
+            del == 1 && index($0, "export PATH=") && index($0, "CUSTOM_PATHS_STR") { del=0; next }
+            # Only print lines that are not within the deletion region
+            if (del == 0) print
+        ' "$BASHRC_FILE" > "$tmpfile" && mv "$tmpfile" "$BASHRC_FILE"
         
-        # Also clean up any remaining individual lines that might be left over
+        # Also clean up any remaining single-line remnants just in case
         sed -i "/^$PATH_ARRAY_VAR=/d" "$BASHRC_FILE"
         sed -i "/^CUSTOM_PATHS_STR=/d" "$BASHRC_FILE"
-        sed -i '/^CUSTOM_PATHS=(/,/^)/d' "$BASHRC_FILE"
+        sed -i '/^CUSTOM_PATHS=(/,/^[[:space:]]*)/d' "$BASHRC_FILE"
         
         # Verify .bashrc syntax after modifications
         if ! bash -n "$BASHRC_FILE" 2>/dev/null; then

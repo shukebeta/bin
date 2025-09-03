@@ -58,9 +58,12 @@ add_path() {
         current_paths="\"$normalized_path\""
     fi
     
-    # Write updated paths to .bashrc
-    write_custom_paths "$current_paths"
-    
+    # Write updated paths to .bashrc and abort if write fails to avoid mismatched state
+    if ! write_custom_paths "$current_paths"; then
+        echo "Error: Failed to update ~/.bashrc — aborting without modifying current shell PATH."
+        safe_exit 1
+    fi
+
     # Clean up old backups after successful operation
     cleanup_old_backups
     
