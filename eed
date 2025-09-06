@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$REPO_ROOT/lib/eed_common.sh"
 source "$REPO_ROOT/lib/eed_validator.sh"
+source "$REPO_ROOT/lib/eed_auto_fix_unescaped_slashes.sh"
 
 # --- Variable Precedence System ---
 # Priority: CLI flags > Environment variables > Built-in defaults
@@ -75,16 +76,12 @@ while [[ $# -gt 0 ]]; do
                 ED_SCRIPT="$1"
                 ED_SCRIPT_PROVIDED=true
             else
-                echo "✗ Error: Too many arguments" >&2
-                echo "Use 'eed --help' for usage information" >&2
-                exit 1
+                error_exit "Too many arguments" 1 true
             fi
             shift
             ;;
         -*)
-            echo "Error: Unknown option '$1'" >&2
-            echo "Use 'eed --help' for usage information" >&2
-            exit 1
+            error_exit "Unknown option '$1'" 1 true
             ;;
         *)
             if [ -z "$FILE_PATH" ]; then
@@ -93,9 +90,7 @@ while [[ $# -gt 0 ]]; do
                 ED_SCRIPT="$1"
                 ED_SCRIPT_PROVIDED=true
             else
-                echo "✗ Error: Too many arguments" >&2
-                echo "Use 'eed --help' for usage information" >&2
-                exit 1
+                error_exit "Too many arguments" 1 true
             fi
             shift
             ;;
@@ -104,30 +99,24 @@ done
 
 # Validate required arguments
 if [ -z "$FILE_PATH" ]; then
-    echo "✗ Error: File path is required" >&2
-    echo "Use 'eed --help' for usage information" >&2
-    exit 1
+    error_exit "File path is required" 1 true
 fi
 
 # Handle empty script case first (only for explicitly provided empty string)
 if [ "$ED_SCRIPT_PROVIDED" = true ] && [ "$ED_SCRIPT" = "" ]; then
-    echo "✗ Error: Empty ed script provided" >&2
-    echo "Please provide valid ed commands to execute" >&2
-    exit 1
+    error_exit "Empty ed script provided" 1 "Please provide valid ed commands to execute"
 fi
 
 # Handle stdin input (for missing ED_SCRIPT or explicit '-')
 if [ "$ED_SCRIPT" = "-" ] || [ "$ED_SCRIPT_PROVIDED" = false ]; then
     if [ -t 0 ]; then
-        echo "✗ Error: Ed script is required (provide as argument or via stdin)" >&2
-        echo "Use 'eed --help' for usage information" >&2
-        exit 1
+        error_exit "Ed script is required (provide as argument or via stdin)" 1 true
     fi
     ED_SCRIPT=$(cat)
 fi
 
 
-# Normalize line endings for cross-platform compatibility (Git Bash/Windows)  
+# Normalize line endings for cross-platform compatibility (Git Bash/Windows)
 ED_SCRIPT=$(echo "$ED_SCRIPT" | tr -d '\r')
 # Print debug info early if enabled
 if [ "$DEBUG_MODE" = true ]; then
@@ -165,26 +154,30 @@ if ! detect_dot_trap "$ED_SCRIPT" >/dev/null; then
     # The new detect_dot_trap is already intelligent enough to avoid false positives
 fi
 
+# --- EARLY COMMAND VALIDATION ---
+
+# Apply auto-fixing unescaped slashes
+if process_and_fix_unescaped_slashes "$ED_SCRIPT"; then
+    # Remove trailing newline and update script
+    ED_SCRIPT=${FIXED_SCRIPT%$'\n'}
+    echo "✅ Successfully auto-fixed ed script syntax" >&2
+fi
+
 # --- Log Commands for Analysis ---
 log_ed_commands "$ED_SCRIPT"
 
-# --- EARLY COMMAND VALIDATION ---
-
+# Now proceed with normal validation
 SCRIPT_TYPE=$(classify_ed_script "$ED_SCRIPT")
 
-# Handle invalid commands immediately (before any complex analysis)
+# Handle invalid commands immediately (after auto-fixing attempt)
 if [ "$SCRIPT_TYPE" = "invalid_command" ]; then
-    echo "✗ Error: Invalid ed command detected" >&2
-    echo "Please check your ed script syntax" >&2
-    exit 1
+    error_exit "Invalid ed command detected" 1 "Please check your ed script syntax"
 fi
 
 
 # --- Line Number Validation ---
 if ! validate_line_ranges "$ED_SCRIPT" "$FILE_PATH"; then
-    echo "✗ Error: Line number validation failed" >&2
-    echo "Please check that line numbers exist in the file" >&2
-    exit 1
+    error_exit "Line number validation failed" 1 "Please check that line numbers exist in the file"
 fi
 
 # --- Force Mode Safety Analysis ---
@@ -201,7 +194,7 @@ if [ "$FORCE_OVERRIDE" = true ]; then
     echo "⚠️  FORCE_OVERRIDE enabled - bypassing all safety checks" >&2
 else
     # Complex pattern analysis for safety
-    
+
     # If smart-dot protection was applied, treat as non-complex (tutorial context)
     if [ "$SMART_PROTECTION_APPLIED" = true ]; then
         HAS_COMPLEX_PATTERNS=0
@@ -224,26 +217,28 @@ fi
 # Skip reordering if complex patterns detected (unified architecture)
 if [ "$DISABLE_AUTO_REORDER" = "false" ] && [ $HAS_COMPLEX_PATTERNS -eq 0 ]; then
     # Run reordering and capture its output
-    REORDERED_OUTPUT=""
-    REORDERED_OUTPUT_AND_STATUS=$(reorder_script "$ED_SCRIPT"; echo $?)
-    # Extract last line as return value, rest as output
-    reorder_result=$(echo "$REORDERED_OUTPUT_AND_STATUS" | tail -n1)
-    REORDERED_OUTPUT=$(echo "$REORDERED_OUTPUT_AND_STATUS" | head -n -1)
-    if [ "$reorder_result" -eq 1 ]; then
-        # Reordering occurred, use the reordered script
-        ED_SCRIPT="$REORDERED_OUTPUT"
-        [ "$DEBUG_MODE" = true ] && echo "Debug mode: using reordered script:" >&2
-        [ "$DEBUG_MODE" = true ] && echo "$ED_SCRIPT" | sed 's/^/  /' >&2
+    REORDERED_OUTPUT=$(reorder_script "$ED_SCRIPT")
+    reorder_status=$?
 
-        # Cancel --force when reordering occurs
-        if [ "$EFFECTIVE_FORCE_MODE" = true ]; then
-            echo "💡 Script reordered for safety (--force disabled)" >&2
-            EFFECTIVE_FORCE_MODE=false
-        fi
+    # Handle failure case (needs error message)
+    if [ $reorder_status -ne 0 ]; then
+        [ "$DEBUG_MODE" = true ] && echo "ℹ️ Using original script due to reordering failure" >&2
     else
-        # No reordering, use original script
-        ED_SCRIPT="$REORDERED_OUTPUT"
+        # Handle successful reordering case (needs success message + force cancellation)
+        if [ "$ED_SCRIPT" != "$REORDERED_OUTPUT" ]; then
+            [ "$DEBUG_MODE" = true ] && echo "Debug mode: using reordered script:" >&2
+            [ "$DEBUG_MODE" = true ] && echo "$REORDERED_OUTPUT" | sed 's/^/  /' >&2
+
+            # Cancel --force when reordering occurs
+            if [ "$EFFECTIVE_FORCE_MODE" = true ]; then
+                echo "💡 Script reordered for safety (--force disabled)" >&2
+                EFFECTIVE_FORCE_MODE=false
+            fi
+        fi
     fi
+
+    # Always use the reordering output (whether original, reordered, or fallback)
+    ED_SCRIPT="$REORDERED_OUTPUT"
     # Always succeed after reordering (treat as normal operation)
     true
 elif [ $HAS_COMPLEX_PATTERNS -ne 0 ]; then
@@ -301,13 +296,13 @@ if [ "$EFFECTIVE_FORCE_MODE" = true ]; then
         echo "✨ No changes needed (file already matches desired state)"
         exit 0
     fi
-    
+
     # Apply changes
     mv "$PREVIEW_FILE" "$FILE_PATH"
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if (cd "$(dirname "$FILE_PATH")" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
         git add "$FILE_PATH" 2>/dev/null || true
     fi
-    
+
     echo "✨ Changes applied successfully"
     exit 0
 else
@@ -337,7 +332,7 @@ else
         echo "  mv '$PREVIEW_FILE' '$FILE_PATH'"
 
         # Add git staging hint if in a git repository
-        if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if (cd "$(dirname "$FILE_PATH")" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
             echo " && git add '$FILE_PATH'"
         fi
 
