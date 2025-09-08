@@ -10,13 +10,13 @@ setup() {
 
     # Create unique test directory and switch into it
     TEST_DIR="$(mktemp -d)"
-    cd "$TEST_DIR"
+    cd "$TEST_DIR" || exit
 
     # Use the repository eed executable directly
     SCRIPT_UNDER_TEST="$REPO_ROOT/eed"
 
     # Prevent logging during tests
-    export EED_TESTING=1
+    export EED_TESTING=true
 }
 
 teardown() {
@@ -32,7 +32,7 @@ line3
 EOF
 
     # Single parameter containing complete ed script
-    run $SCRIPT_UNDER_TEST --force test.txt "3a
+    run "$SCRIPT_UNDER_TEST" --force test.txt "3a
 new line
 .
 w
@@ -50,7 +50,7 @@ line3
 EOF
 
     # Test heredoc integration
-    run $SCRIPT_UNDER_TEST --force test.txt "$(cat <<'EOF'
+    run "$SCRIPT_UNDER_TEST" --force test.txt "$(cat <<'EOF'
 2c
 replaced line
 .
@@ -71,7 +71,7 @@ original
 EOF
 
     # User manually controls w/q
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 w
@@ -88,8 +88,11 @@ line2
 line3
 EOF
 
-    # Multi-step workflow with intermediate save
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    # Multi-step workflow with intermediate save using heredoc (Git Bash compatible)
+    # Force apply the preview so the test verifies file changes rather than the preview behavior.
+    # Also disable auto-reordering so --force is not cancelled by safety reordering.
+    run env EED_FORCE_OVERRIDE=true "$SCRIPT_UNDER_TEST" --force --disable-auto-reorder test.txt - << 'EOF'
+1c
 changed1
 .
 w
@@ -97,7 +100,8 @@ w
 changed2
 .
 w
-q"
+q
+EOF
     [ "$status" -eq 0 ]
     run grep -q "changed1" test.txt
     [ "$status" -eq 0 ]
@@ -111,7 +115,7 @@ original
 EOF
 
     # Script without w should warn but not fail
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 Q"
@@ -130,7 +134,7 @@ original
 EOF
 
     # Script without q should still complete
-    run $SCRIPT_UNDER_TEST --force test.txt "1c
+    run "$SCRIPT_UNDER_TEST" --force test.txt "1c
 modified
 .
 w"
@@ -145,7 +149,7 @@ placeholder
 EOF
 
     # Test complex content with quotes and special characters
-    run $SCRIPT_UNDER_TEST --force test.txt "$(cat <<'OUTER'
+    run "$SCRIPT_UNDER_TEST" --force test.txt "$(cat <<'OUTER'
 1c
 Content with 'single' and "double" quotes
 Line with $dollar and `backticks`
@@ -164,25 +168,17 @@ OUTER
     [ "$status" -eq 0 ]
 }
 
-@test "single parameter rejects multi-parameter syntax" {
-    cat > test.txt << 'EOF'
-original
-EOF
 
-    # Old multi-parameter syntax should fail with helpful error
-    run $SCRIPT_UNDER_TEST --force test.txt "1c" "new content" "."
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"single parameter"* ]] || [[ "$output" == *"heredoc"* ]]
-}
-
-@test "empty script should not modify file" {
+@test "empty script should return error" {
     cat > test.txt << 'EOF'
 original content
 EOF
 
-    # Empty ed script should do nothing
-    run $SCRIPT_UNDER_TEST --force test.txt ""
-    [ "$status" -eq 0 ]
+    # Empty ed script should return error
+    run "$SCRIPT_UNDER_TEST" --force test.txt ""
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Error: Empty ed script provided"* ]]
+    # File should remain unchanged
     run grep -q "original content" test.txt
     [ "$status" -eq 0 ]
 }

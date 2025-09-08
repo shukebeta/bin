@@ -131,7 +131,7 @@ do_replace() {
                 local preview_content
                 preview_content=$(rg_get_preview "$PATTERN" "$REPLACEMENT" "$file" "${EXTRA_RG_OPTS[@]}")
                 local rg_exit=$?
-
+                
                 # Check if there would be changes
                 if [[ $rg_exit -eq 0 ]] || [[ $rg_exit -eq 1 ]]; then
                     if ! diff -q "$file" <(echo "$preview_content") >/dev/null 2>&1; then

@@ -7,61 +7,79 @@ if [ "${EED_COMMON_LOADED:-}" = "1" ]; then
 fi
 EED_COMMON_LOADED=1
 
+# Source regex patterns
+source "$(dirname "${BASH_SOURCE[0]}")/eed_regex_patterns.sh"
+
 # Ed command logging configuration
 EED_LOG_FILE="$HOME/.eed_command_log.txt"
 
-# Show usage information
-show_usage() {
-    echo "Usage: eed [--debug] [--force] [--disable-auto-reorder] FILE {SCRIPT|-}"
-    echo ""
-    echo "Modes (preferred examples first):"
-    echo ""
-    echo "  1) Pipe a simple instruction stream (quick):"
-    echo "     printf '1d\nw\nq\n' | eed FILE -"
-    echo ""
-    echo "  2) Use heredoc with '-' to pass complex scripts via stdin:"
-    echo "     eed FILE - <<'EOF'"
-    echo "     3c"
-    echo "     new content"
-    echo "     ."
-    echo "     w"
-    echo "     q"
-    echo "     EOF"
-    echo ""
-    echo "  3) Single-parameter heredoc/inline (legacy):"
-    echo "     eed FILE \"\$(cat <<'EOF'"
-    echo "     3c"
-    echo "     new content"
-    echo "     ."
-    echo "     w"
-    echo "     q"
-    echo "     EOF"
-    echo "     )\""
-    echo ""
-    echo "Options:"
-    echo "  --debug    Enable debug mode (preserve temp files, verbose errors)"
-    echo "  --force    Skip preview-confirm workflow, edit file directly"
-    echo "  --disable-auto-reorder  Disable automatic script reordering"
-    echo ""
-    echo "Common ed commands (examples):"
-    echo "  Nd             - Delete line N"
-    echo "  N,Md           - Delete lines N through M"
-    echo "  Nc <text> .    - Replace line N with <text>"
-    echo "  Na <text> .    - Insert <text> after line N"
-    echo "  Ni <text> .    - Insert <text> before line N"
-    echo "  ,p             - Print all lines (view file)"
-    echo "  N,Mp           - Print lines N through M"
-    echo "  /pattern/p     - Print lines matching pattern"
-    echo "  s/old/new/g    - Replace all 'old' with 'new' on current line"
-    echo "  1,\$s/old/new/g - Replace all 'old' with 'new' in entire file"
+# Show help information
+show_help() {
+    cat << 'EOF'
+Usage: eed [OPTIONS] <file> [ed_script | -]
+
+AI-oriented text editor with bulletproof safety guarantees
+
+OPTIONS:
+  --force         Apply changes directly (skip preview mode)
+  --debug         Show detailed debugging information
+  --disable-auto-reorder  Disable automatic command reordering
+  --help          Show this help message
+
+ARGUMENTS:
+  file            Target file to edit (will be created if it doesn't exist)
+  ed_script       Ed commands as string, or '-' to read from stdin
+  -               Read ed script from stdin (alternative to ed_script)
+
+EXAMPLES:
+  # Preview mode (default - safe)
+  eed file.txt $'1a\nHello\n.\nw\nq'
+
+  # Direct mode (skip preview)
+  eed --force file.txt $'1d\nw\nq'
+
+  # Read from stdin
+  echo $'1a\nContent\n.\nw\nq' | eed file.txt -
+
+  # For complex scripts, use heredoc syntax - avoid nested heredocs
+  # (this prevents shell interpretation of the script content)
+  eed /unix/style/path/to/file - <<'EOF'
+  # ed commands here
+  w
+  q
+  EOF
+
+WORKFLOW:
+  1. Validates ed commands for safety
+  2. Automatically creates preview in file.eed.preview
+  3. Shows diff and instructions (unless --force)
+  4. Provides clear next steps
+
+
+# Cross-platform line normalization for Git Bash/Windows compatibility
+# Removes trailing \r characters that cause CRLF issues
+normalize_line() {
+    local line="$1"
+    # Remove trailing \r if present (CRLF -> LF)
+    echo "${line%$'\r'}"
+}
+SAFETY FEATURES:
+  - Original files never corrupted
+  - Preview-first workflow
+  - Automatic command reordering
+  - Line number validation
+  - Git integration
+EOF
 }
 
 # Log ed commands for analysis and debugging
 log_ed_commands() {
     local script_content="$1"
+    local log_file="${2:-$EED_LOG_FILE}"  # Optional log file parameter, defaults to global setting
 
-    # Skip logging during tests
-    if [[ "${EED_TESTING:-}" == "1" ]]; then
+    # Skip logging to the default user log during tests unless an explicit log file is provided.
+    # This prevents tests from polluting the user's home directory when EED_TESTING is set.
+    if { [ "${EED_TESTING:-}" = "1" ] || [ "${EED_TESTING:-}" = "true" ]; } && [ $# -lt 2 ]; then
         return 0
     fi
 
@@ -74,18 +92,18 @@ log_ed_commands() {
         line="${line#"${line%%[![:space:]]*}"}"
         line="${line%"${line##*[![:space:]]}"}"
 
-        # --- Rule 1: Skip boilerplate ---
-        # If the line is exactly '.', 'w', 'q', or 'Q', ignore it.
-        if [[ "$line" == "." || "$line" == "w" || "$line" == "q" || "$line" == "Q" ]]; then
-            continue
-        fi
-
-        # --- Rule 2: Skip data lines (for a, c, i) ---
+        # --- Rule 2: Handle input mode FIRST (before boilerplate filtering) ---
         if [ "$in_input_mode" = true ]; then
             if [[ "$line" == "." ]]; then
                 in_input_mode=false
             fi
-            continue # Don't log the content being inserted
+            continue # Don't log the content being inserted or terminators
+        fi
+
+        # --- Rule 1: Skip boilerplate (after input mode handling) ---
+        # If the line is exactly '.', 'w', 'q', or 'Q', ignore it.
+        if [[ "$line" == "." || "$line" == "w" || "$line" == "q" || "$line" == "Q" ]]; then
+            continue
         fi
 
         # Check for commands that enter input mode *after* trying to log the command itself
@@ -96,7 +114,32 @@ log_ed_commands() {
         # --- Rule 3: Log the command if it's not empty and hasn't been skipped ---
         if [ -n "$line" ]; then
             # Log format: TIMESTAMP | COMMAND
-            echo "$timestamp | $line" >> "$EED_LOG_FILE"
+            echo "$timestamp | $line" >> "$log_file"
         fi
     done <<< "$script_content"
 }
+# Unified error reporting function
+# Usage: error_exit "message" [exit_code] [show_usage_or_custom_message]
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    local second_message="${3:-}"
+    
+    # Standardized error format
+    echo "✗ Error: $message" >&2
+    
+    # Debug mode: show basic stack info
+    if [ "${DEBUG_MODE:-}" = "true" ]; then
+        echo "  Location: ${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} in ${FUNCNAME[1]}()" >&2
+    fi
+    
+    # Handle second message (usage hint or custom message)
+    if [ "$second_message" = "true" ]; then
+        echo "Use 'eed --help' for usage information" >&2
+    elif [ -n "$second_message" ] && [ "$second_message" != "false" ]; then
+        echo "$second_message" >&2
+    fi
+    
+    exit "$exit_code"
+}
+

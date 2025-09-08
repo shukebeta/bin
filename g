@@ -110,10 +110,10 @@ validate_inputs() {
 do_search() {
     rg_search_content "$PATTERN" "$TARGET" "${EXTRA_RG_OPTS[@]}"
     local exit_code=$?
-
+    
     handle_rg_exit_code $exit_code "$PATTERN" "search"
     local handle_exit=$?
-
+    
     if [[ $handle_exit -ne 0 ]]; then
         exit $handle_exit
     fi

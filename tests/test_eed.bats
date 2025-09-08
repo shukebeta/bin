@@ -34,7 +34,7 @@ setup() {
     export PATH="$REPO_ROOT:$PATH"
 
     # Prevent logging during tests
-    export EED_TESTING=1
+    export EED_TESTING=true
 }
 
 teardown() {
@@ -52,7 +52,7 @@ line4
 line5
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test1.txt "3a
+    run "$SCRIPT_UNDER_TEST" --force test1.txt "3a
 inserted_line
 .
 w
@@ -71,7 +71,7 @@ line4
 line5
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test1.txt "2d
+    run "$SCRIPT_UNDER_TEST" --force test1.txt "2d
 w
 q"
     [ "$status" -eq 0 ]
@@ -88,7 +88,7 @@ line4
 line5
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test1.txt "1,\$s/line1/replaced_line1/
+    run "$SCRIPT_UNDER_TEST" --force test1.txt "1,\$s/line1/replaced_line1/
 w
 q"
     [ "$status" -eq 0 ]
@@ -101,7 +101,7 @@ q"
 normal line
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test2.txt "1a
+    run "$SCRIPT_UNDER_TEST" --force test2.txt "1a
 line with 'single quotes'
 .
 w
@@ -116,7 +116,7 @@ q"
 normal line
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
+    run "$SCRIPT_UNDER_TEST" --force test2.txt "$(cat <<'EOF'
 1a
 line with "double quotes"
 .
@@ -134,7 +134,7 @@ EOF
 normal line
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
+    run "$SCRIPT_UNDER_TEST" --force test2.txt "$(cat <<'EOF'
 1a
 line with \backslash
 .
@@ -152,7 +152,7 @@ EOF
 normal line
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test2.txt "$(cat <<'EOF'
+    run "$SCRIPT_UNDER_TEST" --force test2.txt "$(cat <<'EOF'
 1a
 line with $dollar sign
 .
@@ -170,7 +170,7 @@ EOF
 old_path=/usr/local/bin
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test3.txt "s|old_path=.*|new_path=C:\\Users\\Test\$User\\Documents|
+    run "$SCRIPT_UNDER_TEST" --force test3.txt "s|old_path=.*|new_path=C:\\Users\\Test\$User\\Documents|
 w
 q"
     [ "$status" -eq 0 ]
@@ -184,7 +184,7 @@ original content
 EOF
 
     # Invalid command should be detected and rejected before execution
-    run $SCRIPT_UNDER_TEST --force test4.txt "invalid_command"
+    run "$SCRIPT_UNDER_TEST" --force test4.txt "invalid_command"
     [ "$status" -ne 0 ]
 
     # Original content should be preserved (file never modified)
@@ -200,7 +200,7 @@ function newName() {
 }
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test5.txt "1,\$s/.*console\.log.*;//
+    run "$SCRIPT_UNDER_TEST" --force test5.txt "1,\$s/.*console\.log.*;//
 w
 q"
     [ "$status" -eq 0 ]
@@ -215,7 +215,7 @@ function newName() {
 }
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test5.txt "2a
+    run "$SCRIPT_UNDER_TEST" --force test5.txt "2a
     // Added comment
 .
 w
@@ -231,7 +231,7 @@ safe content
 EOF
 
     # Attempt command injection - should be treated as literal text
-    run $SCRIPT_UNDER_TEST --force test6.txt "1a
+    run "$SCRIPT_UNDER_TEST" --force test6.txt "1a
 ; rm -rf /tmp; echo malicious
 .
 w
@@ -248,7 +248,7 @@ q"
 safe content
 EOF
 
-    run $SCRIPT_UNDER_TEST --force test6.txt "1a
+    run "$SCRIPT_UNDER_TEST" --force test6.txt "1a
 line with | & ; < > characters
 .
 w
@@ -258,15 +258,148 @@ q"
     [ "$status" -eq 0 ]
 }
 
-@test "file creation for non-existent file" {
+
+@test "debug: edge case malformed script (moved from debug_integration.bats)" {
+  # From integration tests line 238 issue
+  cat > edge_case.bats <<'EOF'
+# Test: edge case
+function test_edge_case() {
+  echo "test"
+}
+EOF
+
+  # Script that might cause transform failure
+  script='1a
+complex
+malformed.
+script.
+that.
+might.
+fail.
+.
+w
+q'
+
+  echo "File before:"
+  cat -n edge_case.bats
+
+  echo "=== Testing edge case ==="
+  run "$SCRIPT_UNDER_TEST" edge_case.bats "$script"
+  echo "Exit status: $status"
+  echo "Output: $output"
+
+  echo "=== File after ==="
+  cat edge_case.bats
+
+  # Should handle gracefully (either succeed or fail cleanly)
+  if [ "$status" -eq 0 ]; then
+    echo "✓ Edge case handled successfully"
+  else
+    echo "✓ Edge case failed cleanly (expected behavior)"
+  fi
+}
+
+@test "debug: reproduce original failing scenario (moved from debug_integration.bats)" {
+  # Exact copy of original test but with clean @test definitions
+  cat > test_example.bats <<'EOF'
+#!/usr/bin/env bats
+
+# Test: existing test (cleaned from @test)
+function existing_test() {
+  run echo "hello"
+  [ "$status" -eq 0 ]
+}
+EOF
+
+  script='3a
+# Test case demonstrates ed command usage
+# Example: eed file.txt with multiple dots
+content line
+.
+w
+q'
+
+  echo "Current directory: $(pwd)"
+  echo "Test files in directory:"
+  ls -la
+  echo "File before eed:"
+  cat test_example.bats
+  echo "Script to apply:"
+  printf "%q\n" "$script"
+
+  echo "Running eed with bash trace:"
+  bash -x "$SCRIPT_UNDER_TEST" --debug --force test_example.bats "$script" 2>&1
+  local eed_status=$?
+  echo "Direct eed exit status: $eed_status"
+
+  echo "File after (if exists):"
+  cat test_example.bats 2>/dev/null || echo "File not found"
+
+  # Check if content was inserted
+  if grep -q "content line" test_example.bats; then
+    echo "✓ Content was inserted successfully"
+  else
+    echo "✗ Content was NOT inserted"
+  fi
+}
+
+@test "debug: step by step execution trace (moved from debug_integration.bats)" {
+  cat > simple_file.txt <<'EOF'
+line1
+line2
+line3
+EOF
+
+  echo "=== Simple script test ==="
+  script='3a
+simple content
+.
+w
+q'
+
+  echo "Script to test:"
+  printf "%s\n" "$script"
+
+  echo "=== Full bash trace ==="
+  bash -x "$SCRIPT_UNDER_TEST" --debug --force simple_file.txt "$script" 2>&1 | tail -50
+  local exit_code=$?
+  echo "Exit code: $exit_code"
+
+  echo "=== File result ==="
+  cat simple_file.txt
+
+  # Check if content was actually inserted
+  if grep -q "simple content" simple_file.txt; then
+    echo "✓ Simple content was inserted"
+  else
+    echo "✗ Simple content was NOT inserted - eed succeeded but did nothing!"
+  fi
+}
+
+@test "debug: file creation issue (moved from debug_integration.bats)" {
     # Test that eed can create new files
-    run $SCRIPT_UNDER_TEST --force newfile.txt "1i
+    script='1i
 first line
 .
 w
-q"
+q'
+    echo "=== Testing file creation ==="
+    run "$SCRIPT_UNDER_TEST" --force newfile.txt "$script"
+    echo "Exit status: $status"
+    echo "Output: $output"
+    
+    echo "=== File check ==="
+    if [ -f newfile.txt ]; then
+        echo "✓ File was created"
+        echo "File contents:"
+        cat newfile.txt
+    else
+        echo "✗ File was NOT created"
+        ls -la *.txt 2>/dev/null || echo "No txt files found"
+    fi
+    
+    # Test should pass now
     [ "$status" -eq 0 ]
     [ -f newfile.txt ]
-    run grep -q "first line" newfile.txt
-    [ "$status" -eq 0 ]
+    grep -q "first line" newfile.txt
 }

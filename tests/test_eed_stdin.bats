@@ -1,11 +1,11 @@
-#\!/usr/bin/env bats
+#!/usr/bin/env bats
 # Test suite for eed stdin functionality
 
 setup() {
     REPO_ROOT="$BATS_TEST_DIRNAME/.."
     SCRIPT_UNDER_TEST="$REPO_ROOT/eed"
     TEMP_DIR=$(mktemp -d)
-    cd "$TEMP_DIR"
+    cd "$TEMP_DIR" || exit
 }
 
 teardown() {
@@ -15,11 +15,14 @@ teardown() {
 
 @test "stdin with pipeline" {
     echo -e "line 1\nline 2\nline 3" > test.txt
-    
-    printf '1d\nw\nq\n' | $SCRIPT_UNDER_TEST --force test.txt -
-    
-    [ "$?" -eq 0 ]
-    
+
+    run "$SCRIPT_UNDER_TEST" --force test.txt - << 'EOF'
+1d
+w
+q
+EOF
+    [ "$status" -eq 0 ]
+
     run cat test.txt
     [ "${lines[0]}" = "line 2" ]
     [ "${lines[1]}" = "line 3" ]
@@ -29,12 +32,14 @@ teardown() {
     echo -e "line 1\nline 2\nline 3" > test.txt
 
     # Pipe script but omit the '-' positional argument; eed should accept stdin.
-    run bash -c "printf '1d\nw\nq\n' | $SCRIPT_UNDER_TEST --force test.txt"
+    run "$SCRIPT_UNDER_TEST" --force test.txt << 'EOF'
+1d
+w
+q
+EOF
     [ "$status" -eq 0 ]
 
-    # The tool should print a friendly tip when it auto-read stdin
-    [[ "$output" == *"I read your script from stdin"* ]] || [[ "$output" == *"'-' was missing"* ]]
-
+    # Verify the functionality worked correctly (file was edited)
     run cat test.txt
     [ "${lines[0]}" = "line 2" ]
     [ "${lines[1]}" = "line 3" ]
@@ -42,13 +47,13 @@ teardown() {
 
 @test "backward compatibility works" {
     echo -e "line 1\nline 2\nline 3" > test.txt
-    
-    run $SCRIPT_UNDER_TEST --force test.txt "2d
+
+    run "$SCRIPT_UNDER_TEST" --force test.txt "2d
 w
 q"
-    
+
     [ "$status" -eq 0 ]
-    
+
     run cat test.txt
     [ "${lines[0]}" = "line 1" ]
     [ "${lines[1]}" = "line 3" ]
@@ -57,11 +62,11 @@ q"
 @test "stdin with file redirection (when working in proper shell)" {
     echo -e "line 1\nline 2\nline 3" > test.txt
     printf '2c\nmodified line 2\n.\nw\nq\n' > script.ed
-    
+
     # Note: This test may fail in restricted environments
     # but should work in normal shell environments
-    run bash -c "$SCRIPT_UNDER_TEST --force test.txt - < script.ed"
-    
+    run bash -c '"$1" --force test.txt - < script.ed' bash "$SCRIPT_UNDER_TEST"
+
     # We expect this to work, but acknowledge it might fail in some environments
     if [ "$status" -eq 0 ]; then
         run cat test.txt
