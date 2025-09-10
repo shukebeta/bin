@@ -1,1 +1,22 @@
-npm install -g @anthropic-ai/claude-code
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ensure a version argument was provided
+if [ -z "${1:-}" ]; then
+  echo "Usage: $0 version_number"
+  exit 1
+fi
+
+pkg="@anthropic-ai/claude-code"
+version="$1"
+
+# Ensure npm is available
+if ! command -v npm >/dev/null 2>&1; then
+  echo "Error: npm is not installed or not found in PATH." >&2
+  exit 2
+fi
+
+echo "Installing ${pkg}@${version}..."
+npm install -g "${pkg}@${version}"
+
+echo "Installation finished."
