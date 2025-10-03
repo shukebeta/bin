@@ -68,11 +68,8 @@ is_ed_script_valid() {
         return 0  # Success but no operations
     fi
 
-    # Check if script ends with 'q' or 'Q' command
-    if ! echo "$script" | grep -q '[qQ]$'; then
-        echo "Warning: Ed script does not end with 'q' or 'Q' command" >&2
-        # Don't fail - just warn, as user might intentionally want this
-    fi
+    # Note: Auto-completion will add missing q commands automatically
+    # No need to check for q/Q commands here
 
     return 0
 }
@@ -167,7 +164,7 @@ classify_ed_script() {
 # Detect potential dot trap in ed scripts
 # This detects patterns that might indicate a user intended to use heredoc
 # but the dots got interpreted as ed terminators instead
-detect_dot_trap() {
+no_dot_trap() {
     local script="$1"
     local -a lines
     local -a suspicious_line_numbers=()
@@ -258,6 +255,7 @@ detect_dot_trap() {
         return 1
     fi
 
+    # No suspicious dot trap detected
     return 0
 }
 
@@ -295,109 +293,6 @@ apply_smart_dot_handling() {
     return 1
 }
 
-# Detect complex patterns that are unsafe for automatic reordering
-no_complex_patterns() {
-    local script="$1"
-    local line
-    local -a addresses=()
-    local -a intervals=()
-    local in_input_mode=false
-    
-    # Track addressing modes used in the script
-    local has_numeric=false
-    local has_search=false
-    local has_global=false
-    local has_offset=false
-
-    while IFS= read -r line; do
-        # Skip empty lines and comments
-        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-
-        # Handle input mode context (after a/c/i commands)
-        if [ "$in_input_mode" = true ]; then
-            # In input mode, only look for terminator
-            if [[ "$line" == "." ]]; then
-                in_input_mode=false
-            fi
-            # Skip all other lines in input mode as they are text content
-            continue
-        fi
-
-        # Check if this line starts input mode
-        if is_input_command "$line"; then
-            in_input_mode=true
-            # Continue to process this command line normally
-        fi
-
-        # Detect move/transfer/read commands - these are always complex
-        if [[ "$line" =~ ${EED_REGEX_MOVE_TRANSFER} ]]; then
-            [ "$DEBUG_MODE" = true ] && echo "COMPLEX: Move/transfer/read command detected: $line" >&2
-            return 1
-        fi
-
-        # Track addressing modes instead of immediately flagging them
-        if [[ "$line" =~ $EED_REGEX_GV_MODIFYING ]]; then
-            has_global=true
-        elif [[ "$line" =~ $EED_REGEX_NON_NUMERIC_MODIFYING ]]; then
-            has_search=true
-        elif [[ "$line" =~ $EED_REGEX_OFFSET_MODIFYING ]]; then
-            has_offset=true
-        fi
-
-        # Extract numeric addresses (including $ for last line) and check for overlaps
-        if [[ "$line" =~ ${EED_REGEX_ADDR_CMD} ]]; then
-            has_numeric=true
-            local start="${BASH_REMATCH[1]}"
-            local end="${BASH_REMATCH[3]:-$start}"
-            local cmd="${BASH_REMATCH[4]}"
-
-            # Convert $ to a high number for comparison
-            [[ "$end" == "\$" ]] && end="999999"
-
-            # Check for interval overlaps with existing ranges
-            for existing in "${intervals[@]}"; do
-                local ex_start="${existing%%:*}"
-                local ex_end="${existing##*:}"
-
-                # Check if intervals overlap
-                if (( start <= ex_end && end >= ex_start )); then
-                    echo "COMPLEX: Overlapping intervals detected: $start-$end vs $ex_start-$ex_end" >&2
-                    return 1
-                fi
-            done
-
-            intervals+=("$start:$end")
-            addresses+=("$start")
-        # Also capture dollar sign addressing ($d, $c, etc.)
-        elif [[ "$line" =~ ^\$[dDcCbBiIaAsSjJmMtT]$ ]]; then
-            has_numeric=true
-        fi
-    done <<< "$script"
-
-    # Check for same-address conflicts
-    local -A addr_count
-    for addr in "${addresses[@]}"; do
-        addr_count[$addr]=$((${addr_count[$addr]:-0} + 1))
-        if (( addr_count[$addr] > 1 )); then
-            echo "COMPLEX: Multiple operations on same address: $addr" >&2
-            return 1
-        fi
-    done
-
-    # Check for mixed addressing modes - this is the real danger
-    local mode_count=0
-    [ "$has_numeric" = true ] && mode_count=$((mode_count + 1))
-    [ "$has_search" = true ] && mode_count=$((mode_count + 1))
-    [ "$has_global" = true ] && mode_count=$((mode_count + 1))
-    [ "$has_offset" = true ] && mode_count=$((mode_count + 1))
-    
-    if [ "$mode_count" -gt 1 ]; then
-        [ "$DEBUG_MODE" = true ] && echo "COMPLEX: Mixed addressing modes detected (numeric=$has_numeric, search=$has_search, global=$has_global, offset=$has_offset)" >&2
-        return 1
-    fi
-
-    return 0  # No complex patterns detected
-}
 # Validate line number ranges in ed script
 validate_line_ranges() {
     local script="$1"
@@ -481,5 +376,87 @@ determine_ordering() {
         echo "ascending"
     else
         echo "unordered"
+    fi
+}
+
+# Auto-complete missing w/q commands for AI assistance
+# Ensures that the output script ALWAYS has w/q commands, regardless of input
+# This is Stage 1 of the two-stage pipeline: w/q completion → dot termination
+# Note: Dot termination is handled separately by detect_and_fix_unterminated_input
+auto_complete_ed_script() {
+    local script="$1"
+    local script_type="$2"
+    local needs_completion=false
+    local completion_message=""
+
+    # Check if script already has write command
+    local has_write=false
+    if echo "$script" | grep -q "^w$\|^w "; then
+        has_write=true
+    fi
+
+    # Check if script already has quit command (q or Q)
+    local has_quit=false
+    if echo "$script" | grep -q "^[qQ]$"; then
+        has_quit=true
+    fi
+
+    # Apply auto-completion based on script type - ensures w/q presence
+    case "$script_type" in
+        "has_modifying")
+            # For modifying scripts: ensure both w and q are present
+            if [ "$has_write" = false ]; then
+                script="$script"$'\nw'
+                needs_completion=true
+                if [ -n "$completion_message" ]; then
+                    completion_message="$completion_message and w"
+                else
+                    completion_message="w"
+                fi
+            fi
+            if [ "$has_quit" = false ]; then
+                script="$script"$'\nq'
+                needs_completion=true
+                if [ -n "$completion_message" ]; then
+                    completion_message="$completion_message and q"
+                else
+                    completion_message="q"
+                fi
+            fi
+            ;;
+        "view_only")
+            # For view-only scripts: ensure q is present
+            if [ "$has_quit" = false ]; then
+                script="$script"$'\nq'
+                needs_completion=true
+                if [ -n "$completion_message" ]; then
+                    completion_message="$completion_message and q"
+                else
+                    completion_message="q"
+                fi
+            fi
+            ;;
+        *)
+            # For any other script types: add q to ensure safe exit
+            # This is the key enhancement - we don't skip unknown types
+            if [ "$has_quit" = false ]; then
+                script="$script"$'\nq'
+                needs_completion=true
+                if [ -n "$completion_message" ]; then
+                    completion_message="$completion_message and q"
+                else
+                    completion_message="q"
+                fi
+            fi
+            ;;
+    esac
+
+    # Output results - guaranteed to have w/q commands
+    if [ "$needs_completion" = true ]; then
+        echo "AUTO_COMPLETED:$completion_message"
+        echo "$script"
+    else
+        echo "NO_COMPLETION"
+        echo "$script"
     fi
 }

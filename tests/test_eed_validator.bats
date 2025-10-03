@@ -215,12 +215,14 @@ Q"
     [ "$status" -eq 0 ]
 }
 
-@test "validator: script without terminator shows warning" {
+@test "validator: script without terminator (handled by auto-completion)" {
+    # With the new architecture, validator no longer warns about missing q
+    # because auto-completion handles this automatically
     run is_ed_script_valid "5d
 w"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Warning"* ]]
-    [[ "$output" == *"does not end with 'q' or 'Q'"* ]]
+    # Should not produce warning since auto-completion will handle missing q
+    [[ "$output" != *"Warning"* ]]
 }
 
 @test "validator: empty script" {
@@ -260,7 +262,7 @@ w"
 
 @test "dot trap detection: normal ed commands not affected" {
     # Normal ed script with single dot should not trigger detection
-    run detect_dot_trap "3c
+    run no_dot_trap "3c
 new content
 .
 w
@@ -270,7 +272,7 @@ q"
 
 @test "dot trap detection: simple script not flagged" {
     # Short script with normal ed operations should pass
-    run detect_dot_trap "5d
+    run no_dot_trap "5d
 w
 q"
     [ "$status" -eq 0 ]
@@ -289,7 +291,7 @@ final content
 .
 w
 q"
-    run detect_dot_trap "$script"
+    run no_dot_trap "$script"
     [ "$status" -ne 0 ]
     [[ "$output" == *"POTENTIAL_DOT_TRAP"* ]]
 }
@@ -614,25 +616,11 @@ EOF
     [ "$pos_5d" -lt "$pos_1d" ]
 }
 
-@test "improved detection: g/pattern/d should still be detected as complex" {
-    local script="$(printf 'g/function/d\n1d\n5d\nw\nq')"
-    # Test the unified architecture: no_complex_patterns should identify this as complex
-    run no_complex_patterns "$script" 2>/dev/null
-    [ "$status" -ne 0 ]  # Complex pattern detected (returns non-zero)
-}
 
-@test "improved detection: non-numeric address with delete should still be detected as complex" {
-    local script="$(printf '/pattern/d\n1d\n5d\nw\nq')"
-    # Test the unified architecture: no_complex_patterns should identify this as complex
-    run no_complex_patterns "$script" 2>/dev/null
-    [ "$status" -ne 0 ]  # Complex pattern detected (returns non-zero)
-}
 
-@test "improved detection: offset address with delete should still be detected as complex" {
+@test "auto reorder: offset address with numeric deletes still reordered" {
     local script="$(printf '.-5,.+5d\n1d\n5d\nw\nq')"
-    run no_complex_patterns "$script" 2>/dev/null
-    [ "$status" -ne 0 ]  # Complex pattern detected (returns non-zero)
-
+    
     # Verify reorder_script still reorders the numeric parts (that's its job)
     run reorder_script "$script"
     [ "$status" -eq 0 ]  # Function should always succeed
@@ -668,21 +656,6 @@ EOF
 }
 
 
-@test "debug: isolate addr_count issue (moved from debug_integration.bats)" {
-  script='3a
-content line
-.
-w
-q'
-
-  echo "=== Testing no_complex_patterns directly ==="
-  echo "Script:"
-  printf "%s\n" "$script"
-
-  echo "=== Function result ==="
-  no_complex_patterns "$script" 2>&1
-  echo "Exit code: $?"
-}
 
 
 @test "error handling: debug mode shows error messages" {
