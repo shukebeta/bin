@@ -33,7 +33,7 @@ END
 )
 
 # Define model and system message variables
-models=("mistralai/devstral-small-2505:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
+models=("mistralai/devstral-2512:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
 system_message="You are a programmer"
 
 get_commit_message_ai() {
