@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure a version argument was provided
-if [ -z "${1:-}" ]; then
-  echo "Usage: $0 version_number"
-  exit 1
+# Function to show usage
+show_usage() {
+  echo "Usage: $0 [version_number] [-h|--help]"
+  echo ""
+  echo "Install Anthropic Claude Code package globally via npm."
+  echo ""
+  echo "Arguments:"
+  echo "  version_number    Specific version to install (optional, defaults to latest)"
+  echo ""
+  echo "Options:"
+  echo "  -h, --help        Show this help message and exit"
+  echo ""
+  echo "Examples:"
+  echo "  $0                Install latest version"
+  echo "  $0 1.2.3          Install specific version 1.2.3"
+}
+
+# Check for help flags
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_usage
+  exit 0
 fi
 
 pkg="@anthropic-ai/claude-code"
-version="$1"
+version="${1:-}"
 
 # Ensure npm is available
 if ! command -v npm >/dev/null 2>&1; then
@@ -16,7 +33,12 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "Installing ${pkg}@${version}..."
-npm install -g "${pkg}@${version}"
+if [ -n "$version" ]; then
+  echo "Installing ${pkg}@${version}..."
+  npm install -g "${pkg}@${version}"
+else
+  echo "Installing latest version of ${pkg}..."
+  npm install -g "${pkg}"
+fi
 
 echo "Installation finished."

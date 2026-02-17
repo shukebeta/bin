@@ -43,17 +43,50 @@ q
 .
 w
 q'
-  run "$SCRIPT_UNDER_TEST" --force ed_guide.md "$script"
+  run "$SCRIPT_UNDER_TEST" ed_guide.md "$script"
 
   [ "$status" -eq 0 ]
-  [ -f ed_guide.md ]
+  [[ "$output" =~ "Edits applied to a temporary preview" ]]
 
-  # Content should be properly inserted
-  run grep -q "First line." ed_guide.md
+  # Save eed output for later verification
+  eed_output="$output"
+
+  # Content should be properly inserted in preview
+  run grep -q "First line." ed_guide.md.eed.preview
   [ "$status" -eq 0 ]
 
-  run grep -q "Second line." ed_guide.md
+  run grep -q "Second line." ed_guide.md.eed.preview
   [ "$status" -eq 0 ]
+
+  # CRITICAL: Verify structural integrity (prevents false positives)
+  # These assertions ensure smart dot protection actually works
+
+  # Verify the terminator dot inside code block is preserved
+  run grep -n "^\.$" ed_guide.md.eed.preview
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "10:." ]]  # Should be on line 10 (inside code block)
+
+  # Verify w and q commands inside code block are preserved
+  run grep -n "^w$" ed_guide.md.eed.preview
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "11:w" ]]  # Should be on line 11
+
+  run grep -n "^q$" ed_guide.md.eed.preview
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "12:q" ]]  # Should be on line 12
+
+  # Verify closing backticks exist (code block properly closed)
+  run grep -n "^\`\`\`$" ed_guide.md.eed.preview
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "13:\`\`\`" ]]  # Should be on line 13
+
+  # Verify "## Basic Usage" is still at the end (not misplaced)
+  run grep -n "^## Basic Usage$" ed_guide.md.eed.preview
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "14:## Basic Usage" ]]  # Should be on line 14
+
+  # Verify smart dot protection was actually triggered
+  [[ "$eed_output" =~ "Smart dot protection applied" ]]
 }
 
 
@@ -103,17 +136,17 @@ function test_with_dots() {
 .
 w
 q'
-  run "$SCRIPT_UNDER_TEST" --force conflict_test.bats "$script"
+  run "$SCRIPT_UNDER_TEST" conflict_test.bats "$script"
 
   [ "$status" -eq 0 ]
-  [ -f conflict_test.bats ]
+  [[ "$output" =~ "Edits applied to a temporary preview" ]]
 
-  # Original marker-like string should be preserved
-  run grep -q "~~DOT_123~~" conflict_test.bats
+  # Original marker-like string should be preserved in preview
+  run grep -q "~~DOT_123~~" conflict_test.bats.eed.preview
   [ "$status" -eq 0 ]
 
-  # New content should be added
-  run grep -q "content." conflict_test.bats
+  # New content should be added in preview
+  run grep -q "content." conflict_test.bats.eed.preview
   [ "$status" -eq 0 ]
 }
 
@@ -121,20 +154,20 @@ q'
   # Ensure that normal eed operations still work exactly as before
   echo "line1" > simple.txt
 
-  run "$SCRIPT_UNDER_TEST" --force simple.txt "1c
+  run "$SCRIPT_UNDER_TEST" simple.txt "1c
 replaced
 .
 w
 q"
 
   [ "$status" -eq 0 ]
-  [ -f simple.txt ]
+  [[ "$output" =~ "Edits applied to a temporary preview" ]]
 
-  run grep -q "replaced" simple.txt
+  run grep -q "replaced" simple.txt.eed.preview
   [ "$status" -eq 0 ]
 
-  run grep -q "line1" simple.txt
-  [ "$status" -ne 0 ]  # Should be replaced
+  run grep -q "line1" simple.txt.eed.preview
+  [ "$status" -ne 0 ]  # Should be replaced in preview
 }
 
 # === ERROR RECOVERY ===
@@ -162,15 +195,16 @@ q'
   cat -n conflict_test.bats
 
   echo "=== Testing marker conflicts ==="
-  run "$SCRIPT_UNDER_TEST" --force conflict_test.bats "$script"
+  run "$SCRIPT_UNDER_TEST" conflict_test.bats "$script"
   echo "Exit status: $status"
   echo "Output: $output"
 
   echo "=== File after ==="
   cat conflict_test.bats
 
-  # Check if content was inserted
-  if grep -q "test_with_dots" conflict_test.bats; then
+  # Check if content was inserted in preview
+  run grep -q "test_with_dots" conflict_test.bats.eed.preview
+  if [ "$status" -eq 0 ]; then
     echo "✓ Marker conflicts case worked"
   else
     echo "✗ Marker conflicts case failed"
