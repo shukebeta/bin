@@ -1,0 +1,2 @@
+rm -rf /c/Oracle/product/ODAC1120320_x32/inventory/backup
+rm -rf /c/Oracle/product/ODAC1120320_x64/inventory/backup
