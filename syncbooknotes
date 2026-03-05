@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Function to get SSH parameters from .ssh/config
+get_ssh_param() {
+    local alias="$1"
+    local param="$2"
+    local value=$(awk -v alias="$alias" -v param="$param" 'BEGIN{IGNORECASE=1} /^Host\s/ && $2 == alias {found=1} found && $1 == param {sub(/^\s*/, "", $2); print $2; exit} END {if (!found) exit 1}' ~/.ssh/config)
+    echo "$value"
+}
+
+# Check if a parameter is provided
+if [ -z "$1" ]; then
+    echo "Usage: $0 <hostname>"
+    exit 1
+fi
+
+# Get SSH parameters
+remote_host_alias="$1"
+remote_host=$(get_ssh_param "$remote_host_alias" "HostName")
+[ -z "$remote_host" ] && echo "Host $remote_host_alias not found in ~/.ssh/config" && exit 1
+remote_user=$(get_ssh_param "$remote_host_alias" "User")
+[ -z "$remote_user" ] && echo "user is not defined in host: $remote_host_alias " && exit 1
+remote_port=$(get_ssh_param "$remote_host_alias" "Port" || echo "22") # Default port 22 if not found
+
+# Define local and remote directories
+local_dir="/backup/ebook"
+remote_dir="/sdcard"
+local_dict_dir="/backup/koreader/dict"
+remote_dict_dir="/sdcard/koreader/data/dict"
+remote_screenshots_dir="/sdcard/koreader/screenshots"
+local_screenshots_dir="/backup/koreader"
+remote_notes_dir="/sdcard/koreader/clipboard"
+local_notes_dir="/backup/koreader/notes"
+
+# Use rsync for incremental synchronization
+rsync -avz --inplace --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$remote_user@$remote_host:$remote_screenshots_dir" "$local_screenshots_dir"
+rsync -avz --inplace --progress -e "ssh -p $remote_port -o StrictHostKeyChecking=no" --exclude '.DS_Store' --exclude '.git' --exclude '.svn' "$remote_user@$remote_host:$remote_notes_dir" "$local_notes_dir"
+

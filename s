@@ -157,7 +157,11 @@ do_replace() {
                 if [[ $rg_exit -eq 0 ]] || [[ $rg_exit -eq 1 ]]; then
                     if ! diff -q "$file" <(echo "$preview_content") >/dev/null 2>&1; then
                         # Show line-by-line diff in a clean format
-                        diff --unified=0 "$file" <(echo "$preview_content") | tail -n +4 | sed 's/^-/  -/;s/^+/  +/'
+                        if command -v git >/dev/null 2>&1; then
+    git diff --no-index --color=always "$file" <(echo "$preview_content")
+else
+    diff -u "$file" <(echo "$preview_content")
+fi
                         ((total_files_changed++))
                     else
                         echo "  (no changes in this file)"
