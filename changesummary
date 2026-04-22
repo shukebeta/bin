@@ -40,7 +40,7 @@ END
 )
 
 # Define model and system message variables
-models=("google/gemini-2.0-flash-exp:free" "deepseek/deepseek-r1-0528:free" "deepseek/deepseek-chat-v3:free" "tngtech/deepseek-r1t-chimera:free" "microsoft/mai-ds-r1:free")
+models=(z-ai/glm-4.5-air:free minimax/minimax-m2.5:free qwen/qwen3.6-plus-preview:free qwen/qwen3-coder:free)
 system_message="You are a programmer"
 
 # Function to get summary from AI model with failover
