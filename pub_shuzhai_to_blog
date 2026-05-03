@@ -113,7 +113,7 @@ EOF
 curl -X POST "${BLOG_URL}" \
   -H 'origin: https://blog.shukebeta.com' \
   -H 'referer: https://blog.shukebeta.com/admin/' \
-  -H 'cookie: ChyrpSession=pav0g2iq7d0phl95qna76c47sm' \
+  -H "cookie: ChyrpSession=$CHYRP_TOKEN" \
      -H "Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryEznVwciBsbYrRkwB" \
      -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36" \
      --data "${DATA}"
