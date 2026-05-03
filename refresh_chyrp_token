@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Refresh Chyrp Lite blog session token
+# Reads CHYRP_LOGIN and CHYRP_PASSWORD from ~/.bashrc.secret
+# Updates CHYRP_TOKEN in ~/.bashrc.secret with fresh session cookie
+
+source ~/.bashrc.secret
+
+if [ -z "$CHYRP_LOGIN" ] || [ -z "$CHYRP_PASSWORD" ]; then
+  echo "Error: CHYRP_LOGIN and CHYRP_PASSWORD must be set in ~/.bashrc.secret"
+  exit 1
+fi
+
+BLOG_URL='https://blog.shukebeta.com'
+UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
+
+# Step 1: GET login page, extract CSRF hash
+LOGIN_HTML=$(curl -s -c /tmp/chyrp_cookies.txt "${BLOG_URL}/login/" \
+  -H "User-Agent: ${UA}")
+
+HASH=$(echo "$LOGIN_HTML" | grep -oP 'name="hash"\s+value="\K[^"]+')
+
+if [ -z "$HASH" ]; then
+  echo "Error: could not extract CSRF hash from login page"
+  exit 1
+fi
+
+echo "CSRF hash: $HASH"
+
+# Step 2: POST login
+RESPONSE=$(curl -s -D /tmp/chyrp_headers.txt -b /tmp/chyrp_cookies.txt -c /tmp/chyrp_cookies.txt \
+  -X POST "${BLOG_URL}/login/" \
+  -H "User-Agent: ${UA}" \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H "origin: ${BLOG_URL}" \
+  -H "referer: ${BLOG_URL}/login/" \
+  --data-raw "login=${CHYRP_LOGIN}&password=${CHYRP_PASSWORD}&hash=${HASH}&submit=")
+
+# Step 3: Extract ChyrpSession cookie
+NEW_TOKEN=$(grep -oP 'ChyrpSession=\K[^;]+' /tmp/chyrp_headers.txt /tmp/chyrp_cookies.txt 2>/dev/null | head -1)
+
+# Also try from the cookie jar
+if [ -z "$NEW_TOKEN" ]; then
+  NEW_TOKEN=$(grep 'ChyrpSession' /tmp/chyrp_cookies.txt | awk '{print $NF}')
+fi
+
+if [ -z "$NEW_TOKEN" ]; then
+  echo "Error: login succeeded but no ChyrpSession cookie found"
+  echo "Response location header:"
+  grep -i location /tmp/chyrp_headers.txt
+  exit 1
+fi
+
+# Step 4: Update ~/.bashrc.secret
+sed -i "s/^export CHYRP_TOKEN=.*/export CHYRP_TOKEN=${NEW_TOKEN}/" ~/.bashrc.secret
+
+echo "OK: token refreshed → ${NEW_TOKEN}"
+
+# Cleanup
+rm -f /tmp/chyrp_cookies.txt /tmp/chyrp_headers.txt

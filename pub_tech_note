@@ -1,0 +1,119 @@
+#!/bin/bash
+
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 filename"
+  exit 1
+fi
+
+filename="$1"
+
+if [ ! -f "$filename" ]; then
+  echo "File not found: $filename"
+  exit 1
+fi
+
+if ! [ -r "$filename" ]; then
+  echo "File not readable: $filename"
+  exit 1
+fi
+
+if ! file "$filename" | grep -q "text"; then
+  echo "Not a text file: $filename"
+  exit 1
+fi
+
+# Load blog token
+source ~/.bashrc.secret
+
+if [ -z "$CHYRP_TOKEN" ]; then
+  echo "Error: CHYRP_TOKEN not set"
+  exit 1
+fi
+
+# Extract title: first line, strip leading "# "
+POST_TITLE=$(head -n 1 "$filename" | sed 's/^# //')
+
+if [ -z "$POST_TITLE" ]; then
+  echo "Error: no title found in $filename"
+  exit 1
+fi
+
+# Duplicate check
+LOG_DIR=~/logs
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(basename "$0").log"
+
+if [ -s "$LOG_FILE" ]; then
+  LAST_TITLE=$(tail -n 1 "$LOG_FILE")
+  if [ "$LAST_TITLE" = "$POST_TITLE" ]; then
+    echo "Error: Duplicate title detected: $POST_TITLE"
+    exit 1
+  fi
+fi
+
+# Body: everything after the first line
+# For long notes (>50 lines), insert <!-- more --> after line 25 for blog excerpt
+BODY_LINES=$(tail -n +2 "$filename")
+LINE_COUNT=$(echo "$BODY_LINES" | wc -l)
+
+if [ "$LINE_COUNT" -gt 50 ]; then
+  POST_BODY=$(echo "$BODY_LINES" | sed '25a\\n<!-- more -->\n')
+else
+  POST_BODY="$BODY_LINES"
+fi
+
+BOUNDARY='----WebKitFormBoundaryPubTechNote'
+BLOG_URL='https://blog.shukebeta.com/admin/add_post/'
+CREATED_AT=$(date +"%Y-%m-%d %H:%M:%S")
+
+# Build multipart body with CRLF line endings
+# Use printf %s to avoid shell interpreting backticks/special chars in user content
+DATA=$(
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"title\"\r\n\r\n"
+  printf "%s\r\n" "$POST_TITLE"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"body_field_toolbar_upload\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"body\"\r\n\r\n"
+  printf "%s\r\n" "$POST_BODY"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"status\"\r\n\r\npublic\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"slug\"\r\n\r\n\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"created_at\"\r\n\r\n"
+  printf "%s\r\n" "$CREATED_AT"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"option[comment_status]\"\r\n\r\nopen\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"tags\"\r\n\r\ntech_note\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"option[category_id]\"\r\n\r\n3\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"feather\"\r\n\r\ntext\r\n"
+  printf "%s\r\n" "--${BOUNDARY}"
+  printf "Content-Disposition: form-data; name=\"hash\"\r\n\r\nac2d25ac3fadd341a2a47fb36ab94ff228e2007e\r\n"
+  printf "%s\r\n" "--${BOUNDARY}--"
+)
+
+HTTP_CODE=$(curl -s -o /tmp/pub_tech_note_resp.html -w "%{http_code}" -X POST "${BLOG_URL}" \
+  -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+  -H 'cache-control: max-age=0' \
+  -H "Content-Type: multipart/form-data; boundary=${BOUNDARY}" \
+  -b "ChyrpSession=$CHYRP_TOKEN" \
+  -H 'origin: https://blog.shukebeta.com' \
+  -H 'referer: https://blog.shukebeta.com/admin/' \
+  -H 'sec-gpc: 1' \
+  -H 'upgrade-insecure-requests: 1' \
+  -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36" \
+  --data-raw "$DATA")
+
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+  echo "$POST_TITLE" >> "$LOG_FILE"
+  echo "OK: $POST_TITLE ($HTTP_CODE)"
+else
+  echo "FAIL: HTTP $HTTP_CODE"
+  head -20 /tmp/pub_tech_note_resp.html
+  exit 1
+fi
