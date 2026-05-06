@@ -33,7 +33,7 @@ END
 )
 
 # Define model and system message variables
-models=(z-ai/glm-4.7-flash z-ai/glm-4.5-air:free)
+models=(GLM-4.7 GLM-4.6)
 system_message="You are a programmer"
 
 get_commit_message_ai() {
@@ -52,11 +52,11 @@ get_commit_message_ai() {
                 {role: "system", content: $system_content},
                 {role: "user", content: ($static_prompt + .) } # Combine static prompt and stdin diff
             ],
-            max_tokens: 16384,
+            max_tokens: 1024,
             temperature: 0
         }' | curl -s --request POST \
-            --url https://openrouter.ai/api/v1/chat/completions \
-            --header "Authorization: Bearer $OR_FOR_CI_API_KEY" \
+            --url https://api.z.ai/api/coding/paas/v4/chat/completions \
+            --header "Authorization: Bearer $Z_AI_API_KEY" \
             --header "Content-Type: application/json" \
             --data-binary @-) # Read JSON data from stdin
 
