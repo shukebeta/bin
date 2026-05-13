@@ -38,6 +38,18 @@ format_commas() {
     printf "%'d" "$1"
 }
 
+# Format large plain counts compactly (e.g., 1.2m, 50k)
+format_count() {
+    local num=${1:-0}
+    if [ "$num" -ge 1000000 ]; then
+        awk "BEGIN {printf \"%.1fm\", $num / 1000000}"
+    elif [ "$num" -ge 1000 ]; then
+        awk "BEGIN {printf \"%.0fk\", $num / 1000}"
+    else
+        printf "%d" "$num"
+    fi
+}
+
 # Return color escape based on usage percentage
 # Usage: usage_color <pct>
 usage_color() {
@@ -92,7 +104,8 @@ out+="${blue}${model_name}${reset}"
 # Current working directory
 cwd=$(echo "$input" | jq -r '.cwd // empty')
 if [ -n "$cwd" ]; then
-    display_dir="${cwd##*/}"
+    display_cwd="${cwd//\\//}"
+    display_dir="${display_cwd##*/}"
     git_branch=$(git -C "${cwd}" rev-parse --abbrev-ref HEAD 2>/dev/null)
     out+=" ${dim}|${reset} "
     out+="${cyan}${display_dir}${reset}"
@@ -164,7 +177,13 @@ get_oauth_token() {
 }
 
 # ===== LINE 2 & 3: Usage limits with progress bars (cached) =====
-cache_file="/tmp/claude/statusline-usage-cache.json"
+anthropic_base_url="${ANTHROPIC_BASE_URL%/}"
+usage_provider="claude"
+if [ "$anthropic_base_url" = "https://api.z.ai/api/anthropic" ]; then
+    usage_provider="zai"
+fi
+
+cache_file="/tmp/claude/statusline-usage-cache-${usage_provider}.json"
 cache_max_age=60  # seconds between API calls
 mkdir -p /tmp/claude
 
@@ -184,18 +203,28 @@ fi
 
 # Fetch fresh data if cache is stale
 if $needs_refresh; then
-    token=$(get_oauth_token)
-    if [ -n "$token" ] && [ "$token" != "null" ]; then
-        response=$(curl -s --max-time 10 \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $token" \
-            -H "anthropic-beta: oauth-2025-04-20" \
-            -H "User-Agent: claude-code/2.1.34" \
-            "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
-        if [ -n "$response" ] && echo "$response" | jq . >/dev/null 2>&1; then
-            usage_data="$response"
-            echo "$response" > "$cache_file"
+    if [ "$usage_provider" = "zai" ]; then
+        if command -v cclimits >/dev/null 2>&1; then
+            response=$(PYTHONIOENCODING=utf-8 cclimits --zai --json 2>/dev/null)
+            if [ -n "$response" ] && echo "$response" | jq -e '.zai.status == "ok"' >/dev/null 2>&1; then
+                usage_data="$response"
+                echo "$response" > "$cache_file"
+            fi
+        fi
+    else
+        token=$(get_oauth_token)
+        if [ -n "$token" ] && [ "$token" != "null" ]; then
+            response=$(curl -s --max-time 10 \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $token" \
+                -H "anthropic-beta: oauth-2025-04-20" \
+                -H "User-Agent: claude-code/2.1.34" \
+                "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+            if [ -n "$response" ] && echo "$response" | jq . >/dev/null 2>&1; then
+                usage_data="$response"
+                echo "$response" > "$cache_file"
+            fi
         fi
     fi
     # Fall back to stale cache
@@ -273,35 +302,60 @@ format_reset_time() {
 sep=" ${dim}|${reset} "
 
 if [ -n "$usage_data" ] && echo "$usage_data" | jq -e . >/dev/null 2>&1; then
-    # ---- 5-hour (current) ----
-    five_hour_pct=$(echo "$usage_data" | jq -r '.five_hour.utilization // 0' | awk '{printf "%.0f", $1}')
-    five_hour_reset_iso=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
-    five_hour_reset=$(format_reset_time "$five_hour_reset_iso" "time")
-    five_hour_color=$(usage_color "$five_hour_pct")
+    if [ "$usage_provider" = "zai" ]; then
+        # ---- Z.AI 5-hour shared token quota ----
+        zai_pct=$(echo "$usage_data" | jq -r '.zai.token_quota.percentage // empty')
+        if [ -n "$zai_pct" ] && [ "$zai_pct" != "null" ]; then
+            five_hour_pct=$(printf "%.0f" "$zai_pct")
+            five_hour_reset=$(echo "$usage_data" | jq -r '.zai.token_quota.resets_in // empty')
+            five_hour_color=$(usage_color "$five_hour_pct")
 
-    out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
-    [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
+            out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
+            [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
+        fi
 
-    # ---- 7-day (weekly) ----
-    seven_day_pct=$(echo "$usage_data" | jq -r '.seven_day.utilization // 0' | awk '{printf "%.0f", $1}')
-    seven_day_reset_iso=$(echo "$usage_data" | jq -r '.seven_day.resets_at // empty')
-    seven_day_reset=$(format_reset_time "$seven_day_reset_iso" "datetime")
-    seven_day_color=$(usage_color "$seven_day_pct")
+        # ---- Z.AI 7-day historical usage ----
+        weekly_tokens=$(echo "$usage_data" | jq -r '.zai.weekly_usage.tokens // empty')
+        weekly_calls=$(echo "$usage_data" | jq -r '.zai.weekly_usage.calls // empty')
+        if [ -n "$weekly_tokens" ] && [ "$weekly_tokens" != "null" ]; then
+            weekly_tokens_fmt=$(format_count "$weekly_tokens")
+            out+="${sep}${white}7d${reset} ${green}${weekly_tokens_fmt} tok${reset}"
+            if [ -n "$weekly_calls" ] && [ "$weekly_calls" != "null" ]; then
+                weekly_calls_fmt=$(format_count "$weekly_calls")
+                out+=" ${dim}/${weekly_calls_fmt} calls${reset}"
+            fi
+        fi
+    else
+        # ---- 5-hour (current) ----
+        five_hour_pct=$(echo "$usage_data" | jq -r '.five_hour.utilization // 0' | awk '{printf "%.0f", $1}')
+        five_hour_reset_iso=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
+        five_hour_reset=$(format_reset_time "$five_hour_reset_iso" "time")
+        five_hour_color=$(usage_color "$five_hour_pct")
 
-    out+="${sep}${white}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
-    [ -n "$seven_day_reset" ] && out+=" ${dim}@${seven_day_reset}${reset}"
+        out+="${sep}${white}5h${reset} ${five_hour_color}${five_hour_pct}%${reset}"
+        [ -n "$five_hour_reset" ] && out+=" ${dim}@${five_hour_reset}${reset}"
 
-    # ---- Extra usage ----
-    extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // false')
-    if [ "$extra_enabled" = "true" ]; then
-        extra_pct=$(echo "$usage_data" | jq -r '.extra_usage.utilization // 0' | awk '{printf "%.0f", $1}')
-        extra_used=$(echo "$usage_data" | jq -r '.extra_usage.used_credits // 0' | awk '{printf "%.2f", $1/100}')
-        extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // 0' | awk '{printf "%.2f", $1/100}')
-        extra_used="${extra_used:-0.00}"
-        extra_limit="${extra_limit:-0.00}"
-        extra_color=$(usage_color "$extra_pct")
+        # ---- 7-day (weekly) ----
+        seven_day_pct=$(echo "$usage_data" | jq -r '.seven_day.utilization // 0' | awk '{printf "%.0f", $1}')
+        seven_day_reset_iso=$(echo "$usage_data" | jq -r '.seven_day.resets_at // empty')
+        seven_day_reset=$(format_reset_time "$seven_day_reset_iso" "datetime")
+        seven_day_color=$(usage_color "$seven_day_pct")
 
-        out+="${sep}${white}extra${reset} ${extra_color}\$${extra_used}/\$${extra_limit}${reset}"
+        out+="${sep}${white}7d${reset} ${seven_day_color}${seven_day_pct}%${reset}"
+        [ -n "$seven_day_reset" ] && out+=" ${dim}@${seven_day_reset}${reset}"
+
+        # ---- Extra usage ----
+        extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // false')
+        if [ "$extra_enabled" = "true" ]; then
+            extra_pct=$(echo "$usage_data" | jq -r '.extra_usage.utilization // 0' | awk '{printf "%.0f", $1}')
+            extra_used=$(echo "$usage_data" | jq -r '.extra_usage.used_credits // 0' | awk '{printf "%.2f", $1/100}')
+            extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // 0' | awk '{printf "%.2f", $1/100}')
+            extra_used="${extra_used:-0.00}"
+            extra_limit="${extra_limit:-0.00}"
+            extra_color=$(usage_color "$extra_pct")
+
+            out+="${sep}${white}extra${reset} ${extra_color}\$${extra_used}/\$${extra_limit}${reset}"
+        fi
     fi
 fi
 
