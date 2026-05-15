@@ -80,12 +80,25 @@ cleanup() {
 trap cleanup EXIT
 
 # Body: everything after the first line
-# For long notes (>50 lines), insert <!-- more --> after line 25 for blog excerpt
+# For long notes (>50 lines), insert <!-- more --> at the first blank line
+# past line 20 that is OUTSIDE a fenced code block — placing the marker
+# inside ``` ... ``` would render literally and break styling.
 tail -n +2 "$filename" > "$TMPBODY"
 LINE_COUNT=$(wc -l < "$TMPBODY")
 
 if [ "$LINE_COUNT" -gt 50 ]; then
-  sed -i '25a\\n<!-- more -->\n' "$TMPBODY"
+  awk '
+    BEGIN { in_fence = 0; inserted = 0 }
+    /^```/ { in_fence = !in_fence; print; next }
+    {
+      print
+      if (!inserted && NR >= 20 && !in_fence && $0 ~ /^[[:space:]]*$/) {
+        print "<!-- more -->"
+        print ""
+        inserted = 1
+      }
+    }
+  ' "$TMPBODY" > "$TMPBODY.new" && mv "$TMPBODY.new" "$TMPBODY"
 fi
 
 # Build multipart body with CRLF line endings into a temp file to avoid
