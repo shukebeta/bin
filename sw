@@ -82,11 +82,11 @@ handle_branch_switch() {
         git co "$branch_name"
         echo "Switched to branch '$branch_name'"
     else
-        echo "Neither branch '$branch_name_axo' nor '$branch_name' found. Attempting to switch to '$branch_name_axo' anyway."
-        if git co "$branch_name_axo"; then
-            echo "Switched to branch '$branch_name_axo'"
+        echo "Neither branch '$branch_name_axo' nor '$branch_name' found. Attempting to switch to '$1' directly."
+        if git switch "$1"; then
+            echo "Switched to branch '$1'"
         else
-            echo "Failed to switch to branch '$branch_name_axo'"
+            echo "Failed to switch to branch '$1'"
             exit 1
         fi
     fi
