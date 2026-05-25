@@ -64,12 +64,9 @@ LOG_DIR=~/logs
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(basename "$0").log"
 
-if [ -s "$LOG_FILE" ]; then
-  LAST_TITLE=$(tail -n 1 "$LOG_FILE")
-  if [ "$LAST_TITLE" = "$POST_TITLE" ]; then
-    echo "Error: Duplicate title detected: $POST_TITLE"
-    exit 1
-  fi
+if [ -s "$LOG_FILE" ] && grep -qFx "$POST_TITLE" "$LOG_FILE"; then
+  echo "Error: Duplicate title detected: $POST_TITLE"
+  exit 1
 fi
 
 BOUNDARY='----WebKitFormBoundaryPubTechNote'
