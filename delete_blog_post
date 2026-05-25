@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# Manage Chyrp Lite blog posts: find and delete.
+# Usage:
+#   manage_blog_post find [query]    - list posts, optionally filtered by query
+#   manage_blog_post delete <id>     - delete post by ID
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+BLOG_URL='https://blog.shukebeta.com'
+UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
+
+get_credentials() {
+  local creds
+  creds=$(bash "${SCRIPT_DIR}/refresh_chyrp_token" 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "Error: could not refresh session" >&2
+    echo "$creds" >&2
+    exit 1
+  fi
+  CHYRP_TOKEN=$(echo "$creds" | awk '{print $1}')
+  CHYRP_HASH=$(echo "$creds" | awk '{print $2}')
+  export CHYRP_TOKEN CHYRP_HASH
+}
+
+fetch_posts() {
+  local html
+  html=$(curl -s -b "ChyrpSession=${CHYRP_TOKEN}" \
+    -H "User-Agent: ${UA}" \
+    "${BLOG_URL}/admin/?action=manage_posts")
+
+  # Flatten to single lines and extract ID + title pairs
+  echo "$html" | tr -d '\r\n' | grep -oP '<tr id="post_\d+".*?</tr>' | \
+    while IFS= read -r row; do
+      id=$(echo "$row" | grep -oP 'id="post_\K\d+')
+      title=$(echo "$row" | grep -oP 'post_title[^<]*<a[^>]*>\K[^<]+')
+      # Decode HTML entities
+      title=$(echo "$title" | sed 's/&#8217;/'"'"'/g; s/&#8220;\|&#8221;/"/g; s/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g')
+      if [ -n "$id" ] && [ -n "$title" ]; then
+        echo "${id}|${title}"
+      fi
+    done
+}
+
+cmd_find() {
+  local query="$*"
+  local results
+  results=$(fetch_posts)
+
+  if [ -n "$query" ]; then
+    results=$(echo "$results" | grep -i "$query")
+  fi
+
+  if [ -z "$results" ]; then
+    echo "No posts found."
+    exit 0
+  fi
+
+  echo "$results" | while IFS='|' read -r id title; do
+    printf "%-6s %s\n" "$id" "$title"
+  done
+}
+
+cmd_delete() {
+  local id="$1"
+  if [ -z "$id" ] || ! [[ "$id" =~ ^[0-9]+$ ]]; then
+    echo "Usage: $0 delete <post_id>" >&2
+    exit 1
+  fi
+
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${BLOG_URL}/ajax/" \
+    -H 'accept: application/json, text/javascript, */*; q=0.01' \
+    -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \
+    -b "ChyrpSession=${CHYRP_TOKEN}" \
+    -H "origin: ${BLOG_URL}" \
+    -H "referer: ${BLOG_URL}/" \
+    -H 'x-requested-with: XMLHttpRequest' \
+    -H "User-Agent: ${UA}" \
+    --data-raw "action=destroy_post&id=${id}&hash=${CHYRP_HASH}")
+
+  if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
+    echo "OK: deleted post ${id} (${http_code})"
+  else
+    echo "FAIL: HTTP ${http_code}" >&2
+    exit 1
+  fi
+}
+
+# Main
+case "${1:-}" in
+  find)
+    shift
+    get_credentials
+    cmd_find "$@"
+    ;;
+  delete)
+    shift
+    get_credentials
+    cmd_delete "$@"
+    ;;
+  *)
+    echo "Usage: $0 {find [query] | delete <id>}"
+    exit 1
+    ;;
+esac

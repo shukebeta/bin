@@ -1,17 +1,16 @@
 #!/bin/bash
 
 # Refresh Chyrp Lite admin session and CSRF hash.
-# Reads CHYRP_LOGIN, CHYRP_PASSWORD, CHYRP_TOKEN from ~/.bashrc.secret
-# Updates CHYRP_TOKEN and CHYRP_HASH in ~/.bashrc.secret
+# Reads CHYRP_LOGIN, CHYRP_PASSWORD from ~/.bashrc.secret
+# Outputs "CHYRP_TOKEN CHYRP_HASH" on stdout for caller to capture.
 
 source ~/.bashrc.secret
 
 if [ -z "$CHYRP_LOGIN" ] || [ -z "$CHYRP_PASSWORD" ]; then
-  echo "Error: CHYRP_LOGIN and CHYRP_PASSWORD must be set in ~/.bashrc.secret"
+  echo "Error: CHYRP_LOGIN and CHYRP_PASSWORD must be set in ~/.bashrc.secret" >&2
   exit 1
 fi
 
-SECRET_FILE=~/.bashrc.secret
 BLOG_URL='https://blog.shukebeta.com'
 LOGIN_URL="${BLOG_URL}/login/"
 ADMIN_URL="${BLOG_URL}/admin/"
@@ -35,18 +34,7 @@ extract_admin_hash() {
   tr -d '\r\n' < "$1" | sed -n 's/.*name="hash" value="\([^"]*\)".*/\1/p'
 }
 
-upsert_secret() {
-  local name="$1"
-  local value="$2"
-
-  if grep -q "^export ${name}=" "$SECRET_FILE"; then
-    sed -i "s|^export ${name}=.*|export ${name}=${value}|" "$SECRET_FILE"
-  else
-    printf 'export %s=%s\n' "$name" "$value" >> "$SECRET_FILE"
-  fi
-}
-
-# Step 1: Verify the saved token can still reach the authenticated admin page.
+# Step 1: If we have a cached token (from env or file), try it first.
 if [ -n "$CHYRP_TOKEN" ]; then
   ADMIN_HTTP_CODE=$(curl -s -o "$ADMIN_HTML" -w "%{http_code}" \
     -b "ChyrpSession=${CHYRP_TOKEN}" \
@@ -55,31 +43,27 @@ if [ -n "$CHYRP_TOKEN" ]; then
 
   if [ "$ADMIN_HTTP_CODE" = "200" ]; then
     NEW_HASH=$(extract_admin_hash "$ADMIN_HTML")
-
     if [ -n "$NEW_HASH" ]; then
-      upsert_secret CHYRP_HASH "$NEW_HASH"
-      echo "OK: admin session verified"
+      echo "${CHYRP_TOKEN} ${NEW_HASH}"
       exit 0
     fi
   fi
 fi
 
-# Step 2: Existing token is stale or anonymous. Log in with a persistent cookie jar.
-echo "Existing token expired or lacks admin access, logging in..."
-
+# Step 2: Log in with credentials.
 LOGIN_HTTP_CODE=$(curl -s -c "$COOKIE_JAR" -o "$LOGIN_HTML" -w "%{http_code}" \
   -H "User-Agent: ${UA}" \
   "${LOGIN_URL}")
 
 if [ "$LOGIN_HTTP_CODE" != "200" ]; then
-  echo "Error: could not load login page (HTTP ${LOGIN_HTTP_CODE})"
+  echo "Error: could not load login page (HTTP ${LOGIN_HTTP_CODE})" >&2
   exit 1
 fi
 
 LOGIN_HASH=$(extract_login_hash "$LOGIN_HTML")
 
 if [ -z "$LOGIN_HASH" ]; then
-  echo "Error: could not extract login CSRF hash"
+  echo "Error: could not extract login CSRF hash" >&2
   exit 1
 fi
 
@@ -97,7 +81,7 @@ LOGIN_POST_HTTP_CODE=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o /dev/null -w
 NEW_TOKEN=$(awk '$6 == "ChyrpSession" { print $7 }' "$COOKIE_JAR" | tail -n 1)
 
 if [ -z "$NEW_TOKEN" ]; then
-  echo "Error: login failed - no ChyrpSession cookie found"
+  echo "Error: login failed - no ChyrpSession cookie found" >&2
   exit 1
 fi
 
@@ -108,12 +92,8 @@ ADMIN_HTTP_CODE=$(curl -s -b "$COOKIE_JAR" -o "$ADMIN_HTML" -w "%{http_code}" \
 NEW_HASH=$(extract_admin_hash "$ADMIN_HTML")
 
 if [ "$ADMIN_HTTP_CODE" != "200" ] || [ -z "$NEW_HASH" ]; then
-  echo "Error: login failed - admin page not accessible (login POST ${LOGIN_POST_HTTP_CODE}, admin GET ${ADMIN_HTTP_CODE})"
+  echo "Error: login failed - admin page not accessible (login POST ${LOGIN_POST_HTTP_CODE}, admin GET ${ADMIN_HTTP_CODE})" >&2
   exit 1
 fi
 
-# Step 3: Persist the authenticated token and admin-page hash.
-upsert_secret CHYRP_TOKEN "$NEW_TOKEN"
-upsert_secret CHYRP_HASH "$NEW_HASH"
-
-echo "OK: admin session refreshed"
+echo "${NEW_TOKEN} ${NEW_HASH}"
