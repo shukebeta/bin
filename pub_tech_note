@@ -33,17 +33,23 @@ fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-if ! bash "${SCRIPT_DIR}/refresh_chyrp_token" >/dev/null; then
+CREDENTIALS=$(bash "${SCRIPT_DIR}/refresh_chyrp_token" 2>&1)
+
+if [ $? -ne 0 ]; then
   echo "Error: could not refresh Chyrp admin session"
+  echo "$CREDENTIALS"
   exit 1
 fi
 
-source ~/.bashrc.secret
+CHYRP_TOKEN=$(echo "$CREDENTIALS" | awk '{print $1}')
+CHYRP_HASH=$(echo "$CREDENTIALS" | awk '{print $2}')
 
 if [ -z "$CHYRP_TOKEN" ] || [ -z "$CHYRP_HASH" ]; then
   echo "Error: CHYRP_TOKEN and CHYRP_HASH must be set"
   exit 1
 fi
+
+export CHYRP_TOKEN CHYRP_HASH
 
 # Extract title: first line, strip leading "# "
 POST_TITLE=$(head -n 1 "$filename" | sed 's/^# //')
@@ -58,12 +64,9 @@ LOG_DIR=~/logs
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(basename "$0").log"
 
-if [ -s "$LOG_FILE" ]; then
-  LAST_TITLE=$(tail -n 1 "$LOG_FILE")
-  if [ "$LAST_TITLE" = "$POST_TITLE" ]; then
-    echo "Error: Duplicate title detected: $POST_TITLE"
-    exit 1
-  fi
+if [ -s "$LOG_FILE" ] && grep -qFx "$POST_TITLE" "$LOG_FILE"; then
+  echo "Error: Duplicate title detected: $POST_TITLE"
+  exit 1
 fi
 
 BOUNDARY='----WebKitFormBoundaryPubTechNote'
