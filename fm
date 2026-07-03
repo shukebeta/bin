@@ -1,7 +1,17 @@
 #!/bin/bash
 
+# Resolve this script's real directory (follows symlinks) so git-common.sh is
+# found next to the actual script, not next to a symlink on PATH.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    dir="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$dir/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
 # Source common git functions
-source "$(dirname "$0")/git-common.sh"
+source "$SCRIPT_DIR/git-common.sh"
 
 # Check for uncommitted changes first
 check_uncommitted_changes
