@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# gsw = switch to an exact branch name.
+# The actual logic lives in `sw`, which selects its behavior from the invoked
+# name (basename of $0). Delegate to sw with argv[0]=gsw so it runs gsw mode.
+# (A symlink would be cleaner but this repo has core.symlinks=false, so git
+# would check it out as a plain text file on other machines.)
+DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec -a gsw "$DIR/sw" "$@"

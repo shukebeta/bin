@@ -4,9 +4,19 @@
 # Usage: nb [--work|-w] <ticket_number> [suffix]
 #        nb [--help|-h]
 
+# Resolve this script's real directory (follows symlinks) so git-common.sh is
+# found next to the actual script, not next to a symlink on PATH.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    dir="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$dir/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
 # Source common git functions
-if [[ -f "$(dirname "$0")/git-common.sh" ]]; then
-    source "$(dirname "$0")/git-common.sh"
+if [[ -f "$SCRIPT_DIR/git-common.sh" ]]; then
+    source "$SCRIPT_DIR/git-common.sh"
 fi
 
 # Source repo prefix function (for hobby projects)
