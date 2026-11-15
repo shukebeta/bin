@@ -18,6 +18,9 @@ if [ $# -lt 1 ]; then
     usage
 fi
 
+# CF credentials live in the operator file (dotfiles secrets.sh --ops)
+[ -z "$CF_API_TOKEN" ] && [ -r ~/.bashrc.secret.ops ] && source ~/.bashrc.secret.ops
+
 # Check if API token is set
 if [ -z "$CF_API_TOKEN" ]; then
     echo "Error: CF_API_TOKEN not set. Add it to ~/.bashrc"
